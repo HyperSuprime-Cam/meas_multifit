@@ -282,7 +282,6 @@ struct CModelResult {
         FAILED=0,
         MAX_AREA,
         MAX_BAD_PIXEL_FRACTION,
-        NO_SHAPE,
         NO_PSF,
         NO_WCS,
         NO_CALIB,

@@ -294,10 +294,6 @@ struct CModelKeys {
             prefix + ".flags.maxBadPixelFraction",
             "the fraction of bad/clipped pixels in the fit region exceeded region.maxBadPixelFraction"
         );
-        flags[CModelResult::NO_SHAPE] = schema.addField<afw::table::Flag>(
-            prefix + ".flags.noShape",
-            "the shape slot needed to initialize the parameters failed or was not defined"
-        );
         flags[CModelResult::NO_PSF] = schema.addField<afw::table::Flag>(
             prefix + ".flags.noPsf",
             "the multishapelet fit to the PSF model did not succeed"
@@ -1147,13 +1143,9 @@ void CModelAlgorithm::_apply(
     source.set(_impl->keys->center, center);
     // Read the shapelet approximation to the PSF, load/verify other inputs from the SourceRecord
     shapelet::MultiShapeletFunction psf = _processInputs(source, exposure);
-    if (!source.getTable()->getShapeKey().isValid() ||
-        (source.getTable()->getShapeFlagKey().isValid() && source.getShapeFlag())) {
-        source.set(_impl->keys->flags[Result::NO_SHAPE], true);
-        throw LSST_EXCEPT(
-            pex::exceptions::RuntimeErrorException,
-            "Shape slot algorithm failed or was not run"
-        );
+    afw::geom::ellipses::Quadrupole shape = psf.evaluate().computeMoments().getCore();
+    if (!source.getTable()->getShapeKey().isValid() || !(source.getShape().getDeterminantRadius() > 0.0)) {
+        shape = source.getShape();
     }
     // If PsfFlux has been run, use that for approx flux; otherwise we'll compute it ourselves.
     Scalar approxFlux = -1.0;
