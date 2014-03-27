@@ -120,6 +120,7 @@ struct CModelRegionControl {
         nGrowFootprint(5),
         nInitialRadii(3),
         maxArea(100000),
+        maxBadPixelCount(5),
         maxBadPixelFraction(0.1)
     {
         badMaskPlanes.push_back("EDGE");
@@ -150,6 +151,11 @@ struct CModelRegionControl {
     LSST_CONTROL_FIELD(
         badMaskPlanes, std::vector<std::string>,
         "Mask planes that indicate pixels that should be ignored in the fit."
+    );
+
+    LSST_CONTROL_FIELD(
+        maxBadPixelCount, int,
+        "Abort if the number of ignored pixels due to masks is larger than this."
     );
 
     LSST_CONTROL_FIELD(

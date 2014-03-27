@@ -885,10 +885,13 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
     if (getControl().region.includePsfBBox && !region->getBBox().contains(psfBBox)) {
         region = mergeFootprints(*region, afw::detection::Footprint(psfBBox));
     }
-    double originalArea = region->getArea();
+    int originalArea = region->getArea();
     region->clipTo(mask.getBBox(afw::image::PARENT));
     region->intersectMask(mask, _impl->badPixelMask);
-    if ((1.0 - region->getArea() / originalArea) > getControl().region.maxBadPixelFraction) {
+    int badArea = originalArea - region->getArea();
+    if (badArea > getControl().region.maxBadPixelCount
+        || (static_cast<double>(badArea)/originalArea) > getControl().region.maxBadPixelFraction
+    ) {
         region.reset();
     }
     return region;
