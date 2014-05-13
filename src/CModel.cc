@@ -917,7 +917,14 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineFinalFitRegion(
     afw::geom::Box2I const & psfBBox,
     afw::geom::ellipses::Ellipse const & ellipse
 ) const {
-    PTR(afw::detection::Footprint) region = afw::detection::growFootprint(
+    PTR(afw::detection::Footprint) region;
+    if (footprint.getArea() > getControl().region.maxArea) {
+        throw LSST_EXCEPT(
+            pex::exceptions::RuntimeErrorException,
+            "Maximum area exceeded by original footprint"
+        );
+    }
+    region = afw::detection::growFootprint(
         footprint,
         getControl().region.nGrowFootprint,
         true
