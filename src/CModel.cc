@@ -495,7 +495,7 @@ public:
         if (ctrl.doRecordTime) {
             startTime = daf::base::DateTime::now().nsecs();
         }
-        PTR(ProjectedLikelihood) likelihood = boost::make_shared<ProjectedLikelihood>(
+        PTR(UnitTransformedLikelihood) likelihood = boost::make_shared<UnitTransformedLikelihood>(
             model, data.fixed, data.fitSys, *data.position,
             exposure, footprint, data.psf, ctrl.likelihood
         );
@@ -558,7 +558,7 @@ public:
         CModelStageControl const & ctrl, CModelStageResult & result, CModelStageData const & data,
         afw::image::Exposure<Pixel> const & exposure, afw::detection::Footprint const & footprint
     ) const {
-        ProjectedLikelihood likelihood(
+        UnitTransformedLikelihood likelihood(
             model, data.fixed, data.fitSys, *data.position,
             exposure, footprint, data.psf, ctrl.likelihood
         );
@@ -644,7 +644,7 @@ public:
         fixed[ndarray::view(0, exp.model->getFixedDim())] = expData.fixed;
         fixed[ndarray::view(exp.model->getFixedDim(), model->getFixedDim())] = devData.fixed;
 
-        ProjectedLikelihood likelihood(
+        UnitTransformedLikelihood likelihood(
             model, fixed, expData.fitSys, *expData.position,
             exposure, footprint, expData.psf, ctrl.likelihood
         );
