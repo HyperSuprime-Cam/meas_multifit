@@ -160,8 +160,7 @@ struct CModelStageKeys {
         bool isForced,
         CModelStageControl const & ctrl
     ) :
-        flux(afw::table::addFluxFields(schema, prefix + ".flux", "flux from the " + stage + " fit")),
-        fluxCorrection(prefix, schema)
+        flux(afw::table::addFluxFields(schema, prefix + ".flux", "flux from the " + stage + " fit"))
     {
         if (!isForced) {
             ellipse = schema.addField<afw::table::Moments<Scalar> >(
@@ -229,8 +228,6 @@ struct CModelStageKeys {
         record.set(flux.meas, result.flux);
         record.set(flux.err, result.fluxSigma);
         record.set(flux.flag, result.getFlag(CModelStageResult::FAILED));
-        record.set(fluxCorrection.psfFactor, 1.0); // TODO
-        record.set(fluxCorrection.psfFactorFlag, false); // TODO
         if (objective.isValid()) {
             record.set(objective, result.objective);
         }
@@ -266,7 +263,6 @@ struct CModelStageKeys {
     }
 
     afw::table::KeyTuple<afw::table::Flux> flux;
-    algorithms::ScaledFlux::KeyTuple fluxCorrection;
     afw::table::Key<afw::table::Moments<Scalar> > ellipse;
     afw::table::Key<Scalar> objective;
     afw::table::Key<afw::table::Flag> flags[CModelStageResult::N_FLAGS];
@@ -297,7 +293,6 @@ struct CModelKeys {
                    prefix + ".center", "center position used in CModel fit", "pixels"
                )),
         flux(afw::table::addFluxFields(schema, prefix + ".flux", "flux from the final cmodel fit")),
-        fluxCorrection(prefix, schema),
         fracDev(schema.addField<Scalar>(prefix + ".fracDev", "fraction of flux in de Vaucouleur component")),
         objective(schema.addField<Scalar>(prefix + ".objective", "-ln(likelihood) (chi^2) in cmodel fit"))
     {
@@ -346,8 +341,6 @@ struct CModelKeys {
         dev.copyResultToRecord(result.dev, record);
         record.set(flux.meas, result.flux);
         record.set(flux.err, result.fluxSigma);
-        record.set(fluxCorrection.psfFactor, 1.0); // TODO
-        record.set(fluxCorrection.psfFactorFlag, false); // TODO
         record.set(fracDev, result.fracDev);
         record.set(objective, result.objective);
         for (int b = 0; b < CModelResult::N_FLAGS; ++b) {
@@ -371,7 +364,6 @@ struct CModelKeys {
     CModelStageKeys dev;
     afw::table::Key<afw::table::Point<Scalar> > center;
     afw::table::KeyTuple<afw::table::Flux> flux;
-    algorithms::ScaledFlux::KeyTuple fluxCorrection;
     afw::table::Key<Scalar> fracDev;
     afw::table::Key<Scalar> objective;
     afw::table::Key<afw::table::Flag> flags[CModelResult::N_FLAGS];
@@ -825,56 +817,6 @@ CModelAlgorithm::CModelAlgorithm(
 CModelAlgorithm::CModelAlgorithm(Control const & ctrl) :
     algorithms::Algorithm(ctrl), _impl(new Impl(ctrl))
 {}
-
-int CModelAlgorithm::getFluxCount() const { return 4; }
-
-afw::table::KeyTuple<afw::table::Flux> CModelAlgorithm::getFluxKeys(int n) const {
-    if (!_impl->keys) {
-        throw LSST_EXCEPT(
-            pex::exceptions::LogicErrorException,
-            "Algorithm was not initialized with a schema; no keys allocated"
-        );
-    }
-    switch (n) {
-    case 0:
-        return _impl->keys->flux;
-    case 1:
-        return _impl->keys->initial.flux;
-    case 2:
-        return _impl->keys->exp.flux;
-    case 3:
-        return _impl->keys->dev.flux;
-    default:
-        throw LSST_EXCEPT(
-            pex::exceptions::LogicErrorException,
-            "Invalid index for getFluxKeys()"
-        );
-    }
-}
-
-algorithms::ScaledFlux::KeyTuple CModelAlgorithm::getFluxCorrectionKeys(int n) const {
-    if (!_impl->keys) {
-        throw LSST_EXCEPT(
-            pex::exceptions::LogicErrorException,
-            "Algorithm was not initialized with a schema; no keys allocated"
-        );
-    }
-    switch (n) {
-    case 0:
-        return _impl->keys->fluxCorrection;
-    case 1:
-        return _impl->keys->initial.fluxCorrection;
-    case 2:
-        return _impl->keys->exp.fluxCorrection;
-    case 3:
-        return _impl->keys->dev.fluxCorrection;
-    default:
-        throw LSST_EXCEPT(
-            pex::exceptions::LogicErrorException,
-            "Invalid index for getFluxCorrectionKeys()"
-        );
-    }
-}
 
 PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
     afw::image::Mask<> const & mask,
