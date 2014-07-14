@@ -1124,11 +1124,11 @@ shapelet::MultiShapeletFunction CModelAlgorithm::_processInputs(
             "Exposure has no Wcs"
         );
     }
-    if (!exposure.getCalib()) {
+    if (!exposure.getCalib() || exposure.getCalib()->getFluxMag0().first == 0.0) {
         source.set(_impl->keys->flags[Result::NO_CALIB], true);
         throw LSST_EXCEPT(
             pex::exceptions::RuntimeErrorException,
-            "Exposure has no Calib"
+            "Exposure has no valid Calib"
         );
     }
     if (!exposure.getPsf()) {
