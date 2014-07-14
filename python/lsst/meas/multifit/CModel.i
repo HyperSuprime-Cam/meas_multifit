@@ -51,6 +51,10 @@ CModelDiagnosticsConfig = lsst.pex.config.makeConfigClass(CModelDiagnosticsContr
 
 lsst.meas.algorithms.AlgorithmRegistry.register("cmodel", CModelControl)
 
+for fieldName in ("cmodel.exp.flux", "cmodel.dev.flux", "cmodel.flux"):
+    lsst.meas.algorithms.getApCorrRegistry().insert(fieldName)
+del fieldName
+
 CModelAlgorithm.Result = CModelResult
 
 %}

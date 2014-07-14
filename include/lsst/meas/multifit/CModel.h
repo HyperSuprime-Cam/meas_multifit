@@ -29,7 +29,6 @@
 #include "lsst/pex/config.h"
 #include "lsst/afw/table/Source.h"
 #include "lsst/meas/algorithms/Algorithm.h"
-#include "lsst/meas/algorithms/ScaledFlux.h"
 #include "lsst/shapelet/RadialProfile.h"
 #include "lsst/meas/multifit/models.h"
 #include "lsst/meas/multifit/priors.h"
@@ -322,11 +321,7 @@ struct CModelResult {
 #endif
 };
 
-class CModelAlgorithm : public algorithms::Algorithm
-#ifndef SWIG
-    , public algorithms::ScaledFlux
-#endif
-{
+class CModelAlgorithm : public algorithms::Algorithm {
 public:
 
     typedef CModelControl Control;
@@ -344,12 +339,6 @@ public:
     Control const & getControl() const {
         return static_cast<Control const &>(algorithms::Algorithm::getControl());
     }
-
-#ifndef SWIG
-    virtual int getFluxCount() const;
-    virtual afw::table::KeyTuple<afw::table::Flux> getFluxKeys(int n=0) const;
-    virtual algorithms::ScaledFlux::KeyTuple getFluxCorrectionKeys(int n=0) const;
-#endif
 
     /**
      *  @brief Determine the initial fit region for a CModelAlgorithm fit
