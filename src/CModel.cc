@@ -1016,6 +1016,19 @@ CModelAlgorithm::Result CModelAlgorithm::applyForced(
     return result;
 }
 
+void CModelAlgorithm::writeResultToRecord(
+    Result const & result,
+    afw::table::BaseRecord & record
+) const {
+    if (!_impl->keys) {
+        throw LSST_EXCEPT(
+            pex::exceptions::LogicErrorException,
+            "Algorithm was not initialized with a schema; cannot copy to record"
+        );
+    }
+    _impl->keys->copyResultToRecord(result, record);
+}
+
 void CModelAlgorithm::_applyForcedImpl(
     Result & result,
     afw::image::Exposure<Pixel> const & exposure,

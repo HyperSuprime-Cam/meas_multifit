@@ -388,6 +388,8 @@ public:
         Scalar approxFlux=-1
     ) const;
 
+    void writeResultToRecord(Result const & result, afw::table::BaseRecord & record) const;
+
 private:
 
     friend class CModelAlgorithmControl;
