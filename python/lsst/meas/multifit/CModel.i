@@ -23,9 +23,22 @@
 
 %shared_ptr(lsst::meas::multifit::CModelControl)
 %shared_ptr(lsst::meas::multifit::CModelAlgorithm)
+%newobject lsst::meas::multifit::CModelAlgorithm::apply;
+%newobject lsst::meas::multifit::CModelAlgorithm::applyForced;
+
+// SWIG accessing this directly is a bad idea: it's a polymorphic type that would be returned by value,
+// but SWIG wants to do everything by pointer.  The result is confusion over lifetimes, and dangling pointers.
+%ignore lsst::meas::multifit::CModelStageResult::ellipse;
+
 %include "lsst/meas/multifit/CModel.h"
 
 %extend lsst::meas::multifit::CModelStageResult {
+
+    // An alternative accessor for ellipse
+    boost::shared_ptr<lsst::afw::geom::ellipses::Quadrupole> getEllipse() const {
+        return boost::make_shared<lsst::afw::geom::ellipses::Quadrupole>($self->ellipse);
+    }
+
 %pythoncode %{
 
 def displayHistory(self, *kwds):
