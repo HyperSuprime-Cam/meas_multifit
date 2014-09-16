@@ -115,7 +115,7 @@ struct CModelStageControl {
 struct CModelRegionControl {
 
     CModelRegionControl() :
-        includePsfBBox(true),
+        includePsfBBox(false),
         nGrowFootprint(5),
         nInitialRadii(3),
         maxArea(10000),
