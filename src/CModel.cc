@@ -797,19 +797,11 @@ CModelAlgorithm::CModelAlgorithm(
     // version of the measurement framework that's in progress on the LSST side.
 
     algorithms::AlgorithmMap::const_iterator i = others.find(ctrl.psfName);
-    if (i == others.end()) {
-        throw LSST_EXCEPT(
-            pex::exceptions::LogicErrorException,
-            (boost::format("FitPsf with name '%s' not found; needed by CModel.") % ctrl.psfName).str()
-        );
-    }
-    _impl->fitPsfCtrl = boost::dynamic_pointer_cast<extensions::multiShapelet::FitPsfControl const>(
-        i->second->getControl().clone()
-    );
-    if (!_impl->fitPsfCtrl) {
-        throw LSST_EXCEPT(
-            pex::exceptions::LogicErrorException,
-            (boost::format("Algorithm with name '%s' is not FitPsf.") % ctrl.psfName).str()
+    if (i != others.end()) {
+        // Not finding the PSF is now a non-fatal error at this point, because in Jose's use case, we
+        // don't need it here.  We'll throw later if it's missing.
+        _impl->fitPsfCtrl = boost::dynamic_pointer_cast<extensions::multiShapelet::FitPsfControl const>(
+            i->second->getControl().clone()
         );
     }
 }
@@ -1149,6 +1141,13 @@ shapelet::MultiShapeletFunction CModelAlgorithm::_processInputs(
         throw LSST_EXCEPT(
             pex::exceptions::RuntimeErrorException,
             "Exposure has no Psf"
+        );
+    }
+    if (!_impl->fitPsfCtrl) {
+        throw LSST_EXCEPT(
+            pex::exceptions::LogicErrorException,
+            "Schema passed to constructor did not have FitPsf fields; "
+            "a MultiShapeletFunction PSF must be passed to apply()."
         );
     }
     extensions::multiShapelet::FitPsfModel psfModel(*_impl->fitPsfCtrl, source);
