@@ -42,7 +42,7 @@
 %pythoncode %{
 
 def displayHistory(self, *kwds):
-    """Return a display.xOptimizerDisplay object that shows the track of the optimizer
+    """Return a display.OptimizerDisplay object that shows the track of the optimizer
     in this fit.  Additional keyword arguments are forwarded to the OptimizerDisplay
     constructor.
     """
@@ -50,6 +50,7 @@ def displayHistory(self, *kwds):
     return OptimizerDisplay(self.history, self.model, self.objfunc, *kwds)
 
 %}
+
 }
 
 %pythoncode %{
