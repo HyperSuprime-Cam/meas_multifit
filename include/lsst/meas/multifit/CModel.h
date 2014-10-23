@@ -31,7 +31,8 @@
 #include "lsst/meas/algorithms/Algorithm.h"
 #include "lsst/shapelet/RadialProfile.h"
 #include "lsst/meas/multifit/Model.h"
-#include "lsst/meas/multifit/priors.h"
+#include "lsst/meas/multifit/MixturePrior.h"
+#include "lsst/meas/multifit/SoftenedLinearPrior.h"
 #include "lsst/meas/multifit/ProjectedLikelihood.h"
 #include "lsst/meas/multifit/optimizer.h"
 

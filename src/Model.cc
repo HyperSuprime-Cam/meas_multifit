@@ -23,7 +23,7 @@
 
 #include "lsst/pex/exceptions.h"
 #include "lsst/meas/multifit/Model.h"
-#include "lsst/meas/multifit/priors.h"
+#include "lsst/meas/multifit/Prior.h"
 
 namespace lsst { namespace meas { namespace multifit {
 

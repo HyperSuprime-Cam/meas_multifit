@@ -28,102 +28,10 @@
 #define LSST_MAX_DEBUG 10
 #include "lsst/pex/logging/Debug.h"
 #include "lsst/pex/exceptions.h"
-#include "lsst/meas/multifit/priors.h"
+#include "lsst/meas/multifit/SoftenedLinearPrior.h"
 #include "lsst/meas/multifit/TruncatedGaussian.h"
 
-namespace tbl = lsst::afw::table;
-
 namespace lsst { namespace meas { namespace multifit {
-
-//------------- MixturePrior --------------------------------------------------------------------------------
-
-MixturePrior::MixturePrior(PTR(Mixture const) mixture, std::string const & tag) :
-    Prior(tag), _mixture(mixture)
-{}
-
-Scalar MixturePrior::marginalize(
-    Vector const & gradient, Matrix const & hessian,
-    ndarray::Array<Scalar const,1,1> const & nonlinear
-) const {
-    return TruncatedGaussian::fromSeriesParameters(0.0, gradient, hessian).getLogIntegral()
-        - std::log(_mixture->evaluate(nonlinear.asEigen()));
-}
-
-Scalar MixturePrior::maximize(
-    Vector const & gradient, Matrix const & hessian,
-    ndarray::Array<Scalar const,1,1> const & nonlinear,
-    ndarray::Array<Scalar,1,1> const & amplitudes
-) const {
-    TruncatedGaussian tg = TruncatedGaussian::fromSeriesParameters(0.0, gradient, hessian);
-    amplitudes.asEigen() = tg.maximize();
-    return tg.evaluateLog()(amplitudes.asEigen()) - std::log(_mixture->evaluate(nonlinear.asEigen()));
-}
-
-Scalar MixturePrior::evaluate(
-    ndarray::Array<Scalar const,1,1> const & nonlinear,
-    ndarray::Array<Scalar const,1,1> const & amplitudes
-) const {
-    if ((amplitudes.asEigen<Eigen::ArrayXpr>() < 0.0).any()) {
-        return 0.0;
-    } else {
-        return _mixture->evaluate(nonlinear.asEigen());
-    }
-}
-
-void MixturePrior::evaluateDerivatives(
-    ndarray::Array<Scalar const,1,1> const & nonlinear,
-    ndarray::Array<Scalar const,1,1> const & amplitudes,
-    ndarray::Array<Scalar,1,1> const & nonlinearGradient,
-    ndarray::Array<Scalar,1,1> const & amplitudeGradient,
-    ndarray::Array<Scalar,2,1> const & nonlinearHessian,
-    ndarray::Array<Scalar,2,1> const & amplitudeHessian,
-    ndarray::Array<Scalar,2,1> const & crossHessian
-) const {
-    _mixture->evaluateDerivatives(nonlinear, nonlinearGradient, nonlinearHessian);
-    amplitudeGradient.deep() = 0.0;
-    amplitudeHessian.deep() = 0.0;
-    crossHessian.deep() = 0.0;
-}
-
-void MixturePrior::drawAmplitudes(
-    Vector const & gradient, Matrix const & hessian,
-    ndarray::Array<Scalar const,1,1> const & nonlinear,
-    afw::math::Random & rng,
-    ndarray::Array<Scalar,2,1> const & amplitudes,
-    ndarray::Array<Scalar,1,1> const & weights,
-    bool multiplyWeights
-) const {
-    TruncatedGaussian::Sampler sampler
-        = TruncatedGaussian::fromSeriesParameters(0.0, gradient, hessian).sample();
-    sampler(rng, amplitudes, weights, multiplyWeights);
-}
-
-namespace {
-
-class EllipseUpdateRestriction : public Mixture::UpdateRestriction {
-public:
-
-    virtual void restrictMu(Vector & mu) const {
-        mu[0] = 0.0;
-        mu[1] = 0.0;
-    }
-
-    virtual void restrictSigma(Matrix & sigma) const {
-        sigma(0,0) = sigma(1,1) = 0.5*(sigma(0,0) + sigma(1,1));
-        sigma(0,1) = sigma(0,1) = 0.0;
-        sigma(0,2) = sigma(2,0) = sigma(1,2) = sigma(2,1) = 0.5*(sigma(0,2) + sigma(1,2));
-    }
-
-    EllipseUpdateRestriction() : Mixture::UpdateRestriction(3) {}
-
-};
-
-} // anonymous
-
-Mixture::UpdateRestriction const & MixturePrior::getUpdateRestriction() {
-    static EllipseUpdateRestriction const instance;
-    return instance;
-}
 
 //------------- SoftenedLinearPrior -------------------------------------------------------------------------
 
