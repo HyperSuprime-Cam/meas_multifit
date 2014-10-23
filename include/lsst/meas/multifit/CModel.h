@@ -30,7 +30,7 @@
 #include "lsst/afw/table/Source.h"
 #include "lsst/meas/algorithms/Algorithm.h"
 #include "lsst/shapelet/RadialProfile.h"
-#include "lsst/meas/multifit/models.h"
+#include "lsst/meas/multifit/Model.h"
 #include "lsst/meas/multifit/priors.h"
 #include "lsst/meas/multifit/ProjectedLikelihood.h"
 #include "lsst/meas/multifit/optimizer.h"

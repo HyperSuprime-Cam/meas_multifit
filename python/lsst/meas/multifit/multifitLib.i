@@ -185,7 +185,8 @@ Pixel = numpy.float32
 %copyctor lsst::meas::multifit::SoftenedLinearPriorControl;
 %returnCopy(lsst::meas::multifit::SoftenedLinearPrior::getControl)
 
-%include "lsst/meas/multifit/models.h"
+%include "lsst/meas/multifit/Model.h"
+%include "lsst/meas/multifit/MultiModel.h"
 %include "lsst/meas/multifit/priors.h"
 %include "lsst/meas/multifit/Interpreter.h"
 %include "lsst/meas/multifit/Likelihood.h"

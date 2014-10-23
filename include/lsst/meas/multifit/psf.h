@@ -26,7 +26,7 @@
 
 #include "boost/scoped_ptr.hpp"
 
-#include "lsst/meas/multifit/models.h"
+#include "lsst/meas/multifit/Model.h"
 #include "lsst/meas/multifit/Likelihood.h"
 
 namespace lsst { namespace meas { namespace multifit {

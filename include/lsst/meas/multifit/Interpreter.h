@@ -24,7 +24,7 @@
 #define MEAS_MULTIFIT_Interpreter_h_INCLUDED
 
 #include "lsst/meas/multifit/constants.h"
-#include "lsst/meas/multifit/models.h"
+#include "lsst/meas/multifit/Model.h"
 #include "lsst/meas/multifit/priors.h"
 
 namespace lsst { namespace meas { namespace multifit {

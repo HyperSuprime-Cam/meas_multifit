@@ -21,26 +21,38 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
 
-#ifndef LSST_MEAS_MULTIFIT_H
-#define LSST_MEAS_MULTIFIT_H
+#ifndef LSST_MEAS_MULTIFIT_MultiModel_h_INCLUDED
+#define LSST_MEAS_MULTIFIT_MultiModel_h_INCLUDED
 
-#include "lsst/meas/multifit/MarginalSampling.h"
-#include "lsst/meas/multifit/DirectSampling.h"
-#include "lsst/meas/multifit/ModelFitRecord.h"
-#include "lsst/meas/multifit/AdaptiveImportanceSampler.h"
-#include "lsst/meas/multifit/Sampling.h"
-#include "lsst/meas/multifit/TruncatedGaussian.h"
-#include "lsst/meas/multifit/Likelihood.h"
-#include "lsst/meas/multifit/ProjectedLikelihood.h"
-#include "lsst/meas/multifit/UnitSystem.h"
-#include "lsst/meas/multifit/Interpreter.h"
-#include "lsst/meas/multifit/priors.h"
-#include "lsst/meas/multifit/integrals.h"
 #include "lsst/meas/multifit/Model.h"
-#include "lsst/meas/multifit/MultiModel.h"
-#include "lsst/meas/multifit/Mixture.h"
-#include "lsst/meas/multifit/optimizer.h"
-#include "lsst/meas/multifit/psf.h"
-#include "lsst/meas/multifit/CModel.h"
 
-#endif // !LSST_MEAS_MULTIFIT_H
+namespace lsst { namespace meas { namespace multifit {
+
+class MultiModel : public Model {
+public:
+
+    explicit MultiModel(ModelVector components, NameVector const & prefixes);
+
+    ModelVector const & getComponents() const { return _components; }
+
+    virtual PTR(Prior) adaptPrior(PTR(Prior) prior) const;
+
+    virtual EllipseVector makeEllipseVector() const;
+
+    virtual void writeEllipses(
+        Scalar const * nonlinearIter, Scalar const * fixedIter,
+        EllipseIterator ellipseIter
+    ) const;
+
+    virtual void readEllipses(
+        EllipseConstIterator ellipseIter,
+        Scalar * nonlinearIter, Scalar * fixedIter
+    ) const;
+
+private:
+    ModelVector _components;
+};
+
+}}} // namespace lsst::meas::multifit
+
+#endif // !LSST_MEAS_MULTIFIT_MultiModel_h_INCLUDED

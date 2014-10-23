@@ -33,6 +33,7 @@
 #include "lsst/meas/extensions/multiShapelet/FitPsf.h"
 #include "lsst/meas/multifit/TruncatedGaussian.h"
 #include "lsst/meas/multifit/CModel.h"
+#include "lsst/meas/multifit/MultiModel.h"
 
 namespace lsst { namespace meas { namespace multifit {
 
