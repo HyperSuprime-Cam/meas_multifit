@@ -108,14 +108,13 @@ class TruncatedGaussianTestCase(lsst.utils.tests.TestCase):
         evaluator = tg.evaluate()
         def func(x):
             return evaluator(numpy.array([x]))
-        return scipy.integrate.quad(func, 0.0, numpy.inf)
+        return scipy.integrate.quad(func, 0.0, numpy.Inf)
 
     def integrate2d(self, tg):
         evaluator = tg.evaluate()
         def func(x, y):
             return evaluator(numpy.array([x,y]))
-        return scipy.integrate.dblquad(func, 0.0, numpy.inf,
-                                       lambda x: 0.0, lambda x: numpy.inf)
+        return scipy.integrate.dblquad(func, 0.0, numpy.Inf, lambda x: 0.0, lambda x: numpy.Inf)
 
     def test1d(self):
         if scipy is None:
