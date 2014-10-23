@@ -26,7 +26,7 @@
 
 #include "lsst/base.h"
 #include "lsst/afw/math/Random.h"
-#include "lsst/meas/multifit/constants.h"
+#include "lsst/meas/multifit/common.h"
 
 namespace lsst { namespace meas { namespace multifit {
 

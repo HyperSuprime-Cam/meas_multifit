@@ -21,8 +21,8 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
 
-#ifndef LSST_MEAS_MULTIFIT_constants_h_INCLUDED
-#define LSST_MEAS_MULTIFIT_constants_h_INCLUDED
+#ifndef LSST_MEAS_MULTIFIT_common_h_INCLUDED
+#define LSST_MEAS_MULTIFIT_common_h_INCLUDED
 
 #include "Eigen/Core"
 #include "ndarray_fwd.h"
@@ -50,4 +50,4 @@ typedef afw::table::Key< afw::table::Array<Scalar> > ArrayKey;
 
 }}} // namespace lsst::meas::multifit
 
-#endif // !LSST_MEAS_MULTIFIT_constants_h_INCLUDED
+#endif // !LSST_MEAS_MULTIFIT_common_h_INCLUDED

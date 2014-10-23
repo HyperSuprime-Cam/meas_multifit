@@ -106,7 +106,7 @@ Basic routines to talk to lsst::meas::multifit classes
 %declareNumPyConverters(ndarray::Array<double,1,1>);
 %declareNumPyConverters(ndarray::Array<double,2,2>);
 
-%include "lsst/meas/multifit/constants.h"
+%include "lsst/meas/multifit/common.h"
 
 %pythoncode %{
 import numpy

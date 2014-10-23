@@ -23,7 +23,7 @@
 #ifndef MEAS_MULTIFIT_Interpreter_h_INCLUDED
 #define MEAS_MULTIFIT_Interpreter_h_INCLUDED
 
-#include "lsst/meas/multifit/constants.h"
+#include "lsst/meas/multifit/common.h"
 #include "lsst/meas/multifit/Model.h"
 #include "lsst/meas/multifit/Prior.h"
 

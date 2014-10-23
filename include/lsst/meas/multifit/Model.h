@@ -31,7 +31,7 @@
 #include "lsst/base.h"
 #include "lsst/afw/geom/ellipses/Ellipse.h"
 #include "lsst/shapelet/MultiShapeletBasis.h"
-#include "lsst/meas/multifit/constants.h"
+#include "lsst/meas/multifit/common.h"
 
 namespace lsst { namespace meas { namespace multifit {
 
