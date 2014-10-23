@@ -19,11 +19,6 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import sys
-import traceback
-
-import numpy
-
 import lsst.pipe.base
 import lsst.pex.config
 from lsst.meas.extensions.multiShapelet import FitPsfAlgorithm

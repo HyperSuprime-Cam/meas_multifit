@@ -22,10 +22,8 @@
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
 
-import os
 import unittest
 import numpy
-import matplotlib
 
 import lsst.pex.logging
 import lsst.utils.tests
