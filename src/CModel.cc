@@ -494,11 +494,11 @@ public:
         if (ctrl.doRecordTime) {
             startTime = daf::base::DateTime::now().nsecs();
         }
-        PTR(ProjectedLikelihood) likelihood = boost::make_shared<ProjectedLikelihood>(
+        result.likelihood = boost::make_shared<ProjectedLikelihood>(
             model, data.fixed, data.fitSys, *data.position,
             exposure, footprint, data.psf, ctrl.likelihood
         );
-        PTR(OptimizerObjective) objective = OptimizerObjective::makeFromLikelihood(likelihood, prior);
+        PTR(OptimizerObjective) objective = OptimizerObjective::makeFromLikelihood(result.likelihood, prior);
         result.objfunc = objective;
         Optimizer optimizer(objective, data.parameters, ctrl.optimizer);
         try {
@@ -543,6 +543,12 @@ public:
         // This amplitudeVariance is computed holding all the nonlinear parameters fixed, which is likely
         // what we'd want for colors, but underestimates the actual uncertainty on the total flux.
         int amplitudeOffset = model->getNonlinearDim();
+        // Remove the secant term from the Hessian, if we used it; while it improves the Hessian for
+        // the nonlinear parameters most of the time, it can't possibly improve on that of the amplitudes
+        // because for linear parameters H = J^T J
+        if (!ctrl.optimizer.noSR1Term) {
+            optimizer.removeSR1Term();
+        }
         Scalar amplitudeVariance = 1.0 / optimizer.getHessian()[amplitudeOffset][amplitudeOffset];
 
         // Set parameter vectors, flux values, ellipse on result.
@@ -557,19 +563,19 @@ public:
         CModelStageControl const & ctrl, CModelStageResult & result, CModelStageData const & data,
         afw::image::Exposure<Pixel> const & exposure, afw::detection::Footprint const & footprint
     ) const {
-        ProjectedLikelihood likelihood(
+        result.likelihood = boost::make_shared<ProjectedLikelihood>(
             model, data.fixed, data.fitSys, *data.position,
             exposure, footprint, data.psf, ctrl.likelihood
         );
-        ndarray::Array<Pixel,2,-1> modelMatrix = makeModelMatrix(likelihood, data.nonlinear);
+        ndarray::Array<Pixel,2,-1> modelMatrix = makeModelMatrix(*result.likelihood, data.nonlinear);
         afw::math::LeastSquares lstsq = afw::math::LeastSquares::fromDesignMatrix(
             modelMatrix,
-            likelihood.getData()
+            result.likelihood->getData()
         );
         data.amplitudes.deep() = lstsq.getSolution();
         result.objective
             = 0.5*(
-                likelihood.getData().asEigen().cast<Scalar>()
+                result.likelihood->getData().asEigen().cast<Scalar>()
                 - modelMatrix.asEigen().cast<Scalar>() * lstsq.getSolution().asEigen()
             ).squaredNorm();
         fillResult(result, data, lstsq.getCovariance()[0][0]);
@@ -659,23 +665,19 @@ public:
         Vector amplitudes = tg.maximize();
         result.flux = expData.fitSysToMeasSys.flux * amplitudes.sum();
 
-        // To compute the uncertainty on the cmodel flux, we start by transforming the amplitude parameters
-        // by the following orthogonal matrix:
-        Matrix p(2,2);
-        p <<
-            M_SQRT1_2, -M_SQRT1_2,
-            M_SQRT1_2, M_SQRT1_2;
-        Vector p_mu = p * amplitudes;
-        Matrix p_hessian_pt = p * hessian * p.adjoint();
-        // After this transformation, \sqrt(2)*p_mu[1] is the total flux, and \sqrt(2)*p_mu[0] is the
-        // difference between the fluxes of the two components.
-        // We define the flux error as the variance on the total flux with the difference between the
-        // fluxes held fixed.  This is artificial, and an underestimate of the true uncertainty, as we
-        // ought to be marginalizing over the difference between the fluxes - but that integral would
-        // often diverge if we don't take into account the constraints, and if we do, the probability
-        // distribution we get is complicated (Gaussian times a difference of error functions) and
-        // asymmetric, so we'll leave that as a potential project for the future.
-        result.fluxSigma = expData.fitSysToMeasSys.flux / std::sqrt(p_hessian_pt(1,1));
+        // To compute the error on the flux, we actually pretend we just fit a single component that
+        // corresponds to the best-fit linear combination of the two components we *did* just fit -
+        // that's equivalent to holding the ratio of the components fixed when computing the uncertainty.
+        // That means this is an underestimate of the true uncertainty, but it's the sort that kind of
+        // makes sense for colors, and it's consistent with the fact that we're also ignoring the
+        // uncertainty in the nonlinear parameters.  It also makes this uncertainty equivalent to the
+        // PSF flux uncertainty and the single-component exp or dev uncertainty when fitting point
+        // sources, which is convenient, even if it's not statistically correct.
+        // Doing a better job would involve taking into account that we have positivity constraints
+        // on the two components, which means the actual uncertainty is neither Gaussian nor symmetric,
+        // which is a lot harder to compute and a lot harder to use.
+        Scalar fixedH = (modelMatrix.asEigen().cast<Scalar>() * amplitudes).squaredNorm();
+        result.fluxSigma = expData.fitSysToMeasSys.flux / std::sqrt(fixedH);
         result.setFlag(CModelResult::FAILED, false);
 
         result.fracDev = amplitudes[1] / amplitudes.sum();
@@ -797,19 +799,11 @@ CModelAlgorithm::CModelAlgorithm(
     // version of the measurement framework that's in progress on the LSST side.
 
     algorithms::AlgorithmMap::const_iterator i = others.find(ctrl.psfName);
-    if (i == others.end()) {
-        throw LSST_EXCEPT(
-            pex::exceptions::LogicErrorException,
-            (boost::format("FitPsf with name '%s' not found; needed by CModel.") % ctrl.psfName).str()
-        );
-    }
-    _impl->fitPsfCtrl = boost::dynamic_pointer_cast<extensions::multiShapelet::FitPsfControl const>(
-        i->second->getControl().clone()
-    );
-    if (!_impl->fitPsfCtrl) {
-        throw LSST_EXCEPT(
-            pex::exceptions::LogicErrorException,
-            (boost::format("Algorithm with name '%s' is not FitPsf.") % ctrl.psfName).str()
+    if (i != others.end()) {
+        // Not finding the PSF is now a non-fatal error at this point, because in Jose's use case, we
+        // don't need it here.  We'll throw later if it's missing.
+        _impl->fitPsfCtrl = boost::dynamic_pointer_cast<extensions::multiShapelet::FitPsfControl const>(
+            i->second->getControl().clone()
         );
     }
 }
@@ -1000,7 +994,12 @@ void CModelAlgorithm::_applyImpl(
         return;
 
     // Do the linear combination fit
-    _impl->fitLinear(getControl(), result, expData, devData, exposure, *finalFitRegion);
+    try {
+        _impl->fitLinear(getControl(), result, expData, devData, exposure, *finalFitRegion);
+    } catch (...) {
+        result.setFlag(CModelResult::FAILED, true);
+        throw;
+    }
 }
 
 CModelAlgorithm::Result CModelAlgorithm::applyForced(
@@ -1111,7 +1110,12 @@ void CModelAlgorithm::_applyForcedImpl(
         return;
 
     // Do the linear combination fit
-    _impl->fitLinear(getControl(), result, expData, devData, exposure, *finalFitRegion);
+    try {
+        _impl->fitLinear(getControl(), result, expData, devData, exposure, *finalFitRegion);
+    } catch (...) {
+        result.setFlag(CModelResult::FAILED, true);
+        throw;
+    }
 }
 
 template <typename PixelT>
@@ -1149,6 +1153,13 @@ shapelet::MultiShapeletFunction CModelAlgorithm::_processInputs(
         throw LSST_EXCEPT(
             pex::exceptions::RuntimeErrorException,
             "Exposure has no Psf"
+        );
+    }
+    if (!_impl->fitPsfCtrl) {
+        throw LSST_EXCEPT(
+            pex::exceptions::LogicErrorException,
+            "Schema passed to constructor did not have FitPsf fields; "
+            "a MultiShapeletFunction PSF must be passed to apply()."
         );
     }
     extensions::multiShapelet::FitPsfModel psfModel(*_impl->fitPsfCtrl, source);
