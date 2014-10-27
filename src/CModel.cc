@@ -43,17 +43,27 @@ namespace lsst { namespace meas { namespace multifit {
 namespace {
 
 PTR(afw::detection::Footprint) _mergeFootprints(
-    afw::detection::Footprint const & a,
-    afw::detection::Footprint const & b
+    std::vector<PTR(afw::detection::Footprint)> const & inputs
 ) {
     // Yuck: we have no routine that merges Footprints, so as a workaround we make a Mask from
     // the footprints, then run detection on the Mask to make a FootprintSet, then extract the
     // first Footprint from it, after checking that it's the only one.
-    afw::geom::Box2I bbox(a.getBBox());
-    bbox.include(b.getBBox());
+    afw::geom::Box2I bbox;
+    for (
+        std::vector<PTR(afw::detection::Footprint)>::const_iterator iter = inputs.begin();
+        iter != inputs.end();
+        ++iter
+    ) {
+        bbox.include((**iter).getBBox());
+    }
     afw::image::Mask<> mask(bbox);
-    afw::detection::setMaskFromFootprint(&mask, a, afw::image::MaskPixel(0x1));
-    afw::detection::setMaskFromFootprint(&mask, b, afw::image::MaskPixel(0x1));
+    for (
+        std::vector<PTR(afw::detection::Footprint)>::const_iterator iter = inputs.begin();
+        iter != inputs.end();
+        ++iter
+    ) {
+        afw::detection::setMaskFromFootprint(&mask, **iter, afw::image::MaskPixel(0x1));
+    }
     afw::detection::FootprintSet fpSet(
         mask,
         afw::detection::Threshold(0x1, afw::detection::Threshold::BITMASK),
@@ -62,11 +72,20 @@ PTR(afw::detection::Footprint) _mergeFootprints(
     if (fpSet.getFootprints()->size() > 1u) {
         throw LSST_EXCEPT(
             pex::exceptions::RuntimeErrorException,
-            (boost::format("Footprints to be merged do not overlap: %s vs. %s")
-             % a.getBBox() % b.getBBox()).str()
+            "Footprints to be merged do not overlap"
         );
     }
     return fpSet.getFootprints()->front();
+}
+
+PTR(afw::detection::Footprint) _mergeFootprints(
+    PTR(afw::detection::Footprint) a,
+    PTR(afw::detection::Footprint) b
+) {
+    std::vector<PTR(afw::detection::Footprint)> inputs(2);
+    inputs[0] = a;
+    inputs[1] = b;
+    return _mergeFootprints(inputs);
 }
 
 Pixel computeFluxInFootprint(
@@ -837,7 +856,7 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
         );
     }
     if (getControl().region.includePsfBBox && !region->getBBox().contains(psfBBox)) {
-        region = _mergeFootprints(*region, afw::detection::Footprint(psfBBox));
+        region = _mergeFootprints(region, boost::make_shared<afw::detection::Footprint>(psfBBox));
     }
     int originalArea = region->getArea();
     region->clipTo(mask.getBBox(afw::image::PARENT));
@@ -874,12 +893,13 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineFinalFitRegion(
             "Maximum area exceeded by ellipse component of region"
         );
     }
-    afw::detection::Footprint ellipseFootprint(fullEllipse);
-    if (ellipseFootprint.getArea() > 0) {
-        region = _mergeFootprints(*region, ellipseFootprint);
+    PTR(afw::detection::Footprint) ellipseFootprint
+        = boost::make_shared<afw::detection::Footprint>(fullEllipse);
+    if (ellipseFootprint->getArea() > 0) {
+        region = _mergeFootprints(region, ellipseFootprint);
     }
     if (getControl().region.includePsfBBox && !region->getBBox().contains(psfBBox)) {
-        region = _mergeFootprints(*region, afw::detection::Footprint(psfBBox));
+        region = _mergeFootprints(region, boost::make_shared<afw::detection::Footprint>(psfBBox));
     }
     double originalArea = region->getArea();
     region->clipTo(mask.getBBox(afw::image::PARENT));
