@@ -341,6 +341,12 @@ struct CModelKeys {
             prefix + ".flags.noCalib",
             "input exposure has no photometric calibration information"
         );
+        if (isForced) {
+            flags[CModelResult::NO_SIMULTANEOUS] = schema.addField<afw::table::Flag>(
+                prefix + ".flags.noSimultaneous",
+                "simultaneous multi-source fit failed or was not run because a neighbor failed"
+            );
+        }
     }
 
     // this constructor is used to get needed keys from the reference schema in forced mode
@@ -600,6 +606,30 @@ public:
             ).squaredNorm();
         fillResult(result, data, lstsq.getCovariance()[0][0]);
         result.setFlag(CModelStageResult::FAILED, false);
+    }
+
+    void fitMulti(
+        CModelStageControl const & ctrl, std::vector<CModelStageData> const & data,
+        afw::image::Exposure<Pixel> const & exposure, afw::detection::Footprint const & footprint
+    ) const {
+        int dataSize = footprint.getArea();
+        ndarray::Array<Pixel,2,2> modelMatrixT = ndarray::allocate(
+            model->getAmplitudeDim() * data.size(),
+            dataSize
+        );
+        ndarray::Array<Pixel,2,-1> modelMatrix = modelMatrixT.transpose();
+        ndarray::Array<Pixel const,1,1> dataVector;
+        for (std::size_t n = 0; n < data.size(); ++n) {
+            UnitTransformedLikelihood likelihood(
+                model, data[n].fixed, data[n].fitSys, *data[n].position,
+                exposure, footprint, data[n].psf, ctrl.likelihood
+            );
+            // this is shallow assignment, so it's cheap cheap, and it doesn't matter if we repeat it
+            dataVector = likelihood.getData();
+            likelihood.computeModelMatrix(modelMatrix[ndarray::view()(n*dataSize, (n + 1)*dataSize)],
+                                          data[n].nonlinear);
+        }
+        // TODO: actual fitting, return results
     }
 
 };
@@ -1034,6 +1064,106 @@ CModelAlgorithm::Result CModelAlgorithm::applyForced(
     Result result = _impl->makeResult();
     _applyForcedImpl(result, exposure, footprint, psf, center, reference, approxFlux);
     return result;
+}
+
+void CModelAlgorithm::applyMulti(
+    afw::image::Exposure<Pixel> const & exposure,
+    afw::table::SourceCatalog const & sources,
+    afw::table::SourceCatalog const & references
+) const {
+    if (sources.size() != references.size()) {
+        throw LSST_EXCEPT(
+            pex::exceptions::LengthErrorException,
+            "Number of sources does not agree with number of reference objects"
+        );
+    }
+
+    bool anyIndividualFitFailed = false;
+    for (std::size_t n = 0; n < sources.size(); ++n) {
+        // If any of the previous individual fits in this deblend family failed, we'll say that they all did,
+        // because we won't be able to proceed with the simultaneous fit.
+        // We do this by first checking the general failure flag of each one...
+        if (sources[n].get(_impl->keys->flags[CModelResult::FAILED])) {
+            anyIndividualFitFailed = true;
+        }
+        // ...then, we set the general failure flag and the simultaneous failure flag up front, and unset
+        // them later when we succeed (that way we have the correct flags set if we throw).
+        sources[n].set(_impl->keys->flags[CModelResult::FAILED], true);
+        sources[n].set(_impl->keys->flags[CModelResult::NO_SIMULTANEOUS], true);
+    }
+    if (anyIndividualFitFailed) {
+        throw LSST_EXCEPT(
+            pex::exceptions::RuntimeErrorException,
+            "Individual fit for one or more children failed; cannot perform simultaneous fit for family"
+        );
+    }
+
+    std::vector<PTR(afw::detection::Footprint)> childFitRegions;
+    childFitRegions.reserve(sources.size());
+    std::vector<CModelStageData> initialData;
+    initialData.reserve(sources.size());
+    std::vector<CModelResult> refResults;
+    refResults.reserve(sources.size());
+
+    for (std::size_t n = 0; n < sources.size(); ++n) {
+        afw::geom::Point2D center = sources[n].get(_impl->refKeys->center);
+
+        // Read the reference object parameters into a result object.
+        refResults.push_back(_impl->refKeys->copyRecordToResult(references[n]));
+
+        // If PsfFlux has been run, use that for approx flux; otherwise we'll compute it ourselves.
+        Scalar approxFlux = -1.0;
+        if (sources[n].getTable()->getPsfFluxKey().isValid() && !sources[n].getPsfFluxFlag()) {
+            approxFlux = sources[n].getPsfFlux();
+        } else {
+            approxFlux = computeFluxInFootprint(*exposure.getMaskedImage().getImage(),
+                                                *sources[n].getFootprint());
+        }
+
+        // Set up coordinate systems and empty parameter vectors
+        initialData.push_back(
+            CModelStageData(
+                exposure, approxFlux, center,
+                _processInputs(sources[n], exposure),
+                *_impl->initial.model
+            )
+        );
+
+        // Initialize the parameter vectors from the reference values.  Because these are
+        // in fitSys units, we don't need to transform them, as fitSys (or at least its
+        // Wcs) should be the same in both forced mode and non-forced mode.
+        initialData[n].nonlinear.deep() = refResults[n].initial.nonlinear;
+        initialData[n].fixed.deep() = refResults[n].initial.fixed;
+        // Read those parameters into the ellipses.
+        _impl->initial.model->writeEllipses(initialData[n].nonlinear.begin(), initialData[n].fixed.begin(),
+                                            _impl->initial.ellipses.begin());
+        // Transform the ellipses to the exposure coordinate system
+        _impl->initial.ellipses.front().transform(initialData[n].fitSysToMeasSys.geometric).inPlace();
+
+        // Grow the footprint and include the initial ellipse, clip bad pixels and the exposure bbox;
+        // in forced mode we can just use the final fit region immediately since we won't be changing
+        // the initial fit ellipse.
+        afw::geom::Box2I psfBBox
+            = exposure.getPsf()->computeImage(center)->getBBox(afw::image::PARENT);
+        // determineFinalFitRegion should return the exact same result it did in for the individual fit
+        // of this object, so it shouldn't be possible for it to throw here or return a null pointer
+        // - if it would have, it'd have resulted in a flag of the individual fit, and we'd have bailed
+        // out early.
+        childFitRegions.push_back(
+            determineFinalFitRegion(
+                *exposure.getMaskedImage().getMask(),
+                *sources[n].getFootprint(),
+                psfBBox,
+                _impl->initial.ellipses.front()
+            )
+        );
+    }
+
+    // Merge all the child fit regions to get the region we'll use for the simultaneous fit.
+    PTR(afw::detection::Footprint) fullFitRegion = _mergeFootprints(childFitRegions);
+
+    // TO-DO
+
 }
 
 void CModelAlgorithm::writeResultToRecord(

@@ -298,6 +298,7 @@ struct CModelResult {
         NO_PSF,
         NO_WCS,
         NO_CALIB,
+        NO_SIMULTANEOUS,
         N_FLAGS
     };
 
@@ -388,6 +389,12 @@ public:
         afw::geom::Point2D const & center,
         Result const & reference,
         Scalar approxFlux=-1
+    ) const;
+
+    void applyMulti(
+        afw::image::Exposure<Pixel> const & exposure,
+        afw::table::SourceCatalog const & sources,
+        afw::table::SourceCatalog const & references
     ) const;
 
     void writeResultToRecord(Result const & result, afw::table::BaseRecord & record) const;
