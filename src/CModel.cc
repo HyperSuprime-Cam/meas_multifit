@@ -846,6 +846,12 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
     }
     int originalArea = region->getArea();
     region->clipTo(mask.getBBox(afw::image::PARENT));
+    if (region->getArea() == 0) {
+        throw LSST_EXCEPT(
+            pex::exceptions::RuntimeErrorException,
+            "Clipped area reduced to zero."
+        );
+    }
     region->intersectMask(mask, _impl->badPixelMask);
     if (originalArea - region->getArea() > originalArea*getControl().region.maxBadPixelFraction) {
         region.reset();
