@@ -21,14 +21,12 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
 
-#ifndef LSST_MEAS_MULTIFIT_priors_h_INCLUDED
-#define LSST_MEAS_MULTIFIT_priors_h_INCLUDED
+#ifndef LSST_MEAS_MULTIFIT_Prior_h_INCLUDED
+#define LSST_MEAS_MULTIFIT_Prior_h_INCLUDED
 
 #include "lsst/base.h"
-#include "lsst/pex/config.h"
 #include "lsst/afw/math/Random.h"
-#include "lsst/meas/multifit/constants.h"
-#include "lsst/meas/multifit/Mixture.h"
+#include "lsst/meas/multifit/common.h"
 
 namespace lsst { namespace meas { namespace multifit {
 
@@ -123,7 +121,7 @@ public:
      *  @param[in]  hessian      Second derivatives of of the -log likelihood in @f$\alpha@f$ at fixed
      *                           @f$\theta@f$; the matrix @f$H@f$ in the equation above.
      *  @param[in]  nonlinear    The nonlinear parameters @f$\theta@f$.
-     *  @param[out] amplitude    The posterior-maximum amplitude parameters @f$\alpha@f$.
+     *  @param[out] amplitudes   The posterior-maximum amplitude parameters @f$\alpha@f$.
      *
      *  @return The -log(posterior) at the computed amplitude point.
      */
@@ -171,181 +169,6 @@ private:
     std::string _tag;
 };
 
-/**
- *  @brief A prior that's flat in amplitude parameters, and uses a Mixture for nonlinear parameters.
- */
-class MixturePrior : public Prior {
-public:
-
-    explicit MixturePrior(PTR(Mixture const) mixture, std::string const & tag="");
-
-    /// @copydoc Prior::evaluate
-    virtual Scalar evaluate(
-        ndarray::Array<Scalar const,1,1> const & nonlinear,
-        ndarray::Array<Scalar const,1,1> const & amplitudes
-    ) const;
-
-    /// @copydoc Prior::evaluateDerivatives
-    virtual void evaluateDerivatives(
-        ndarray::Array<Scalar const,1,1> const & nonlinear,
-        ndarray::Array<Scalar const,1,1> const & amplitudes,
-        ndarray::Array<Scalar,1,1> const & nonlinearGradient,
-        ndarray::Array<Scalar,1,1> const & amplitudeGradient,
-        ndarray::Array<Scalar,2,1> const & nonlinearHessian,
-        ndarray::Array<Scalar,2,1> const & amplitudeHessian,
-        ndarray::Array<Scalar,2,1> const & crossHessian
-    ) const;
-
-    /// @copydoc Prior::evaluate
-    virtual Scalar marginalize(
-        Vector const & gradient, Matrix const & hessian,
-        ndarray::Array<Scalar const,1,1> const & nonlinear
-    ) const;
-
-    /// @copydoc Prior::maximize
-    virtual Scalar maximize(
-        Vector const & gradient, Matrix const & hessian,
-        ndarray::Array<Scalar const,1,1> const & nonlinear,
-        ndarray::Array<Scalar,1,1> const & amplitudes
-    ) const;
-
-    /// @copydoc Prior::drawAmplitudes
-    virtual void drawAmplitudes(
-        Vector const & gradient, Matrix const & fisher,
-        ndarray::Array<Scalar const,1,1> const & nonlinear,
-        afw::math::Random & rng,
-        ndarray::Array<Scalar,2,1> const & amplitudes,
-        ndarray::Array<Scalar,1,1> const & weights,
-        bool multiplyWeights=false
-    ) const;
-
-    /**
-     *  @brief Return a MixtureUpdateRestriction appropriate for (e1,e2,r) data.
-     *
-     *  This restriction object can be used with Mixture<3>::updateEM() to create
-     *  a mixture with a strictly isotropic ellipticity distribution.
-     */
-    static MixtureUpdateRestriction const & getUpdateRestriction();
-
-    PTR(Mixture const) getMixture() const { return _mixture; }
-
-private:
-    PTR(Mixture const) _mixture;
-};
-
-struct SoftenedLinearPriorControl {
-
-    LSST_CONTROL_FIELD(
-        ellipticityMaxOuter, double,
-        "Maximum ellipticity magnitude (conformal shear units)"
-    );
-
-    LSST_CONTROL_FIELD(
-        ellipticityMaxInner, double,
-        "Ellipticity magnitude (conformal shear units) at which the softened cutoff begins"
-    );
-
-    LSST_CONTROL_FIELD(
-        logRadiusMinOuter, double,
-        "Minimum ln(radius)"
-    );
-
-    LSST_CONTROL_FIELD(
-        logRadiusMinInner, double,
-        "ln(radius) at which the softened cutoff begins towards the minimum"
-    );
-
-    LSST_CONTROL_FIELD(
-        logRadiusMaxOuter, double,
-        "Maximum ln(radius)"
-    );
-
-    LSST_CONTROL_FIELD(
-        logRadiusMaxInner, double,
-        "ln(radius) at which the softened cutoff begins towards the maximum"
-    );
-
-    LSST_CONTROL_FIELD(
-        logRadiusMinMaxRatio, double,
-        "The ratio P(logRadiusMinInner)/P(logRadiusMaxInner)"
-    );
-
-    SoftenedLinearPriorControl() :
-        ellipticityMaxOuter(2.001), ellipticityMaxInner(2.0),
-        logRadiusMinOuter(-10.001), logRadiusMinInner(-10.0),
-        logRadiusMaxOuter(3.001), logRadiusMaxInner(3.0),
-        logRadiusMinMaxRatio(1.0)
-    {}
-
-};
-
-/**
- *  @brief A prior that's linear in radius and flat in ellipticity, with a cubic roll-off at the edges.
- */
-class SoftenedLinearPrior : public Prior {
-public:
-
-    typedef SoftenedLinearPriorControl Control;
-
-    explicit SoftenedLinearPrior(Control const & ctrl=Control());
-
-    /// @copydoc Prior::evaluate
-    virtual Scalar evaluate(
-        ndarray::Array<Scalar const,1,1> const & nonlinear,
-        ndarray::Array<Scalar const,1,1> const & amplitudes
-    ) const;
-
-    /// @copydoc Prior::evaluateDerivatives
-    virtual void evaluateDerivatives(
-        ndarray::Array<Scalar const,1,1> const & nonlinear,
-        ndarray::Array<Scalar const,1,1> const & amplitudes,
-        ndarray::Array<Scalar,1,1> const & nonlinearGradient,
-        ndarray::Array<Scalar,1,1> const & amplitudeGradient,
-        ndarray::Array<Scalar,2,1> const & nonlinearHessian,
-        ndarray::Array<Scalar,2,1> const & amplitudeHessian,
-        ndarray::Array<Scalar,2,1> const & crossHessian
-    ) const;
-
-    /// @copydoc Prior::evaluate
-    virtual Scalar marginalize(
-        Vector const & gradient, Matrix const & hessian,
-        ndarray::Array<Scalar const,1,1> const & nonlinear
-    ) const;
-
-    /// @copydoc Prior::maximize
-    virtual Scalar maximize(
-        Vector const & gradient, Matrix const & hessian,
-        ndarray::Array<Scalar const,1,1> const & nonlinear,
-        ndarray::Array<Scalar,1,1> const & amplitudes
-    ) const;
-
-    /// @copydoc Prior::drawAmplitudes
-    virtual void drawAmplitudes(
-        Vector const & gradient, Matrix const & fisher,
-        ndarray::Array<Scalar const,1,1> const & nonlinear,
-        afw::math::Random & rng,
-        ndarray::Array<Scalar,2,1> const & amplitudes,
-        ndarray::Array<Scalar,1,1> const & weights,
-        bool multiplyWeights=false
-    ) const;
-
-    Control const & getControl() const { return _ctrl; }
-
-private:
-
-    Scalar _evaluate(ndarray::Array<Scalar const,1,1> const & nonlinear) const;
-
-    Control _ctrl;
-    double _logRadiusP1; // probability value at ln(radius) = ctrl.logRadiusMinInner
-    double _logRadiusSlope;
-    double _logRadiusMinRampFraction; // fraction of 
-    double _logRadiusMaxRampFraction;
-    double _ellipticityMaxRampFraction;
-    Eigen::Matrix<double,4,1,Eigen::DontAlign> _logRadiusPoly1;
-    Eigen::Matrix<double,4,1,Eigen::DontAlign> _logRadiusPoly2;
-    Eigen::Matrix<double,4,1,Eigen::DontAlign> _ellipticityPoly;
-};
-
 }}} // namespace lsst::meas::multifit
 
-#endif // !LSST_MEAS_MULTIFIT_priors_h_INCLUDED
+#endif // !LSST_MEAS_MULTIFIT_Prior_h_INCLUDED

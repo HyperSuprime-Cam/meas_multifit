@@ -30,9 +30,10 @@
 #include "lsst/afw/table/Source.h"
 #include "lsst/meas/algorithms/Algorithm.h"
 #include "lsst/shapelet/RadialProfile.h"
-#include "lsst/meas/multifit/models.h"
-#include "lsst/meas/multifit/priors.h"
-#include "lsst/meas/multifit/ProjectedLikelihood.h"
+#include "lsst/meas/multifit/Model.h"
+#include "lsst/meas/multifit/MixturePrior.h"
+#include "lsst/meas/multifit/SoftenedLinearPrior.h"
+#include "lsst/meas/multifit/UnitTransformedLikelihood.h"
 #include "lsst/meas/multifit/optimizer.h"
 
 namespace lsst { namespace meas { namespace multifit {
@@ -95,7 +96,7 @@ struct CModelStageControl {
     );
 
     LSST_NESTED_CONTROL_FIELD(
-        likelihood, lsst.meas.multifit.multifitLib, ProjectedLikelihoodControl,
+        likelihood, lsst.meas.multifit.multifitLib, UnitTransformedLikelihoodControl,
         "Configuration for how the compound model is evaluated and residuals are weighted in this "
         "stage of the fit"
     );
@@ -232,7 +233,7 @@ struct CModelControl : public algorithms::AlgorithmControl {
     );
 
     LSST_NESTED_CONTROL_FIELD(
-        likelihood, lsst.meas.multifit.multifitLib, ProjectedLikelihoodControl,
+        likelihood, lsst.meas.multifit.multifitLib, UnitTransformedLikelihoodControl,
         "configuration for how the compound model is evaluated and residuals are weighted in the exp+dev "
         "linear combination fit"
     );
@@ -267,7 +268,7 @@ struct CModelStageResult {
     PTR(Model) model;
     PTR(Prior) prior;
     PTR(OptimizerObjective) objfunc;
-    PTR(ProjectedLikelihood) likelihood;
+    PTR(UnitTransformedLikelihood) likelihood;
     Scalar flux;
     Scalar fluxSigma;
     Scalar objective;

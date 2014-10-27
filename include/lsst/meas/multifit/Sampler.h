@@ -21,33 +21,28 @@
  * see <http://www.lsstcorp.org/LegalNotices/>.
  */
 
-#ifndef LSST_MEAS_MULTIFIT_constants_h_INCLUDED
-#define LSST_MEAS_MULTIFIT_constants_h_INCLUDED
+#ifndef LSST_MEAS_MULTIFIT_Sampler_h_INCLUDED
+#define LSST_MEAS_MULTIFIT_Sampler_h_INCLUDED
 
-#include "Eigen/Core"
-#include "ndarray_fwd.h"
 #include "lsst/afw/table/fwd.h"
+#include "lsst/meas/multifit/Mixture.h"
+#include "lsst/meas/multifit/Sampling.h"
 
 namespace lsst { namespace meas { namespace multifit {
 
-//@{
-/**
- *  Typedefs to be used for pixel values
- */
-typedef float Pixel;
-//@}
+class Sampler {
+public:
 
-//@{
-/**
- *  Typedefs to be used for probability and parameter values
- */
-typedef double Scalar;
-typedef Eigen::Matrix<Scalar,Eigen::Dynamic,Eigen::Dynamic> Matrix;
-typedef Eigen::Matrix<Scalar,Eigen::Dynamic,1> Vector;
-typedef afw::table::Key<Scalar> ScalarKey;
-typedef afw::table::Key< afw::table::Array<Scalar> > ArrayKey;
-//@}
+    virtual void run(
+        SamplingObjective const & objective,
+        PTR(Mixture) proposal,
+        afw::table::BaseCatalog & samples
+    ) const = 0;
+
+    virtual ~Sampler() {}
+
+};
 
 }}} // namespace lsst::meas::multifit
 
-#endif // !LSST_MEAS_MULTIFIT_constants_h_INCLUDED
+#endif // !LSST_MEAS_MULTIFIT_Sampling_h_INCLUDED
