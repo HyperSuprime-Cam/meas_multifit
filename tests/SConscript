@@ -1,5 +1,3 @@
 # -*- python -*-
 from lsst.sconsUtils import scripts, targets
 scripts.BasicSConscript.tests()
-
-SConscript("reference/SConscript")

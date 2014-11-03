@@ -19,11 +19,6 @@
 # the GNU General Public License along with this program.  If not,
 # see <http://www.lsstcorp.org/LegalNotices/>.
 #
-import sys
-import traceback
-
-import numpy
-
 import lsst.pipe.base
 import lsst.pex.config
 from lsst.meas.extensions.multiShapelet import FitPsfAlgorithm
@@ -45,7 +40,7 @@ class MeasureMultiConfig(BaseMeasureConfig):
         default="deep",
     )
     likelihood = lsst.pex.config.ConfigField(
-        dtype=multifitLib.ProjectedLikelihood.ConfigClass,
+        dtype=multifitLib.UnitTransformedLikelihood.ConfigClass,
         doc="Config for likelihood object that computes model probability at given parameters"
     )
     minPixels = lsst.pex.config.Field(

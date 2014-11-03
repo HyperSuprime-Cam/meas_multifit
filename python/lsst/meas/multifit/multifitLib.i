@@ -106,7 +106,7 @@ Basic routines to talk to lsst::meas::multifit classes
 %declareNumPyConverters(ndarray::Array<double,1,1>);
 %declareNumPyConverters(ndarray::Array<double,2,2>);
 
-%include "lsst/meas/multifit/constants.h"
+%include "lsst/meas/multifit/common.h"
 
 %pythoncode %{
 import numpy
@@ -125,7 +125,7 @@ Pixel = numpy.float32
 %shared_ptr(lsst::meas::multifit::Interpreter);
 %shared_ptr(lsst::meas::multifit::Likelihood);
 %shared_ptr(lsst::meas::multifit::EpochFootprint);
-%shared_ptr(lsst::meas::multifit::ProjectedLikelihood);
+%shared_ptr(lsst::meas::multifit::UnitTransformedLikelihood);
 %shared_ptr(lsst::meas::multifit::Sampler);
 %shared_ptr(lsst::meas::multifit::SamplingObjective);
 %shared_ptr(lsst::meas::multifit::SamplingInterpreter);
@@ -185,15 +185,18 @@ Pixel = numpy.float32
 %copyctor lsst::meas::multifit::SoftenedLinearPriorControl;
 %returnCopy(lsst::meas::multifit::SoftenedLinearPrior::getControl)
 
-%include "lsst/meas/multifit/models.h"
-%include "lsst/meas/multifit/priors.h"
+%include "lsst/meas/multifit/Model.h"
+%include "lsst/meas/multifit/MultiModel.h"
+%include "lsst/meas/multifit/Prior.h"
+%include "lsst/meas/multifit/MixturePrior.h"
+%include "lsst/meas/multifit/SoftenedLinearPrior.h"
 %include "lsst/meas/multifit/Interpreter.h"
 %include "lsst/meas/multifit/Likelihood.h"
 %include "lsst/meas/multifit/UnitSystem.h"
-%include "lsst/meas/multifit/ProjectedLikelihood.h"
+%include "lsst/meas/multifit/UnitTransformedLikelihood.h"
 %include "lsst/meas/multifit/Sampling.h"
-%include "lsst/meas/multifit/DirectSampling.h"
-%include "lsst/meas/multifit/MarginalSampling.h"
+%include "lsst/meas/multifit/Sampler.h"
+%include "lsst/meas/multifit/DirectSamplingInterpreter.h"
 %include "lsst/meas/multifit/AdaptiveImportanceSampler.h"
 %include "lsst/meas/multifit/psf.h"
 %include "lsst/meas/multifit/TruncatedGaussian.h"
@@ -250,8 +253,8 @@ def iterations(self):
 import lsst.pex.config
 import numpy
 
-ProjectedLikelihoodConfig = lsst.pex.config.makeConfigClass(ProjectedLikelihoodControl)
-ProjectedLikelihood.ConfigClass = ProjectedLikelihoodConfig
+UnitTransformedLikelihoodConfig = lsst.pex.config.makeConfigClass(UnitTransformedLikelihoodControl)
+UnitTransformedLikelihood.ConfigClass = UnitTransformedLikelihoodConfig
 %}
 
 //----------- ModelFitRecord/Table/Catalog ------------------------------------------------------------------
@@ -285,4 +288,6 @@ typedef lsst::afw::table::SortedCatalogT<ModelFitRecord> ModelFitCatalog;
 
 %include "lsst/meas/multifit/integrals.h"
 %include "lsst/meas/multifit/optimizer.i"
+%include "lsst/meas/multifit/MarginalSamplingInterpreter.h"
+
 %include "lsst/meas/multifit/CModel.i"
