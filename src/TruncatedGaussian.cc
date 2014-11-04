@@ -119,7 +119,7 @@ TruncatedGaussian TruncatedGaussian::fromSeriesParameters(
         Eigen::Vector2d mu;
         bool isSingular = (s[0] < s[1] * THRESHOLD);
         if (isSingular) {
-            double solutionThreshold = SLN_THRESHOLD*std::max(std::abs(g[0]), std::abs(g[0]));
+            double solutionThreshold = SLN_THRESHOLD*std::max(std::abs(g[0]), std::abs(g[1]));
             if (!(std::abs(v.col(0).dot(g)) < solutionThreshold)) {
                 debugLog.debug<8>(
                     "no solution: singular matrix with s=[%g, %g], mu=[%g, %g]",
