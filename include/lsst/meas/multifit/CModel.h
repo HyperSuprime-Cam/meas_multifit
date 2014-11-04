@@ -268,6 +268,7 @@ struct CModelStageResult {
     PTR(Model) model;
     PTR(Prior) prior;
     PTR(OptimizerObjective) objfunc;
+    PTR(UnitTransformedLikelihood) likelihood;
     Scalar flux;
     Scalar fluxSigma;
     Scalar objective;
