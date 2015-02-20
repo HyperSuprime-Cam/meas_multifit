@@ -1191,13 +1191,21 @@ void CModelAlgorithm::_apply(
     source.set(_impl->keys->center, center);
     // Read the shapelet approximation to the PSF, load/verify other inputs from the SourceRecord
     shapelet::MultiShapeletFunction psf = _processInputs(source, exposure);
+    afw::geom::ellipses::Quadrupole moments;
     if (!source.getTable()->getShapeKey().isValid() ||
         (source.getTable()->getShapeFlagKey().isValid() && source.getShapeFlag())) {
         source.set(_impl->keys->flags[Result::NO_SHAPE], true);
-        throw LSST_EXCEPT(
-            pex::exceptions::RuntimeErrorException,
-            "Shape slot algorithm failed or was not run"
-        );
+        if (getControl().fallbackInitialMomentsPsfFactor > 0.0) {
+            moments = psf.evaluate().computeMoments().getCore();
+            moments.scale(getControl().fallbackInitialMomentsPsfFactor);
+        } else {
+            throw LSST_EXCEPT(
+                pex::exceptions::RuntimeErrorException,
+                "Shape slot algorithm failed or was not run, and fallbackInitialMomentsPsfFactor < 0"
+            );
+        }
+    } else {
+        moments = source.getShape();
     }
     // If PsfFlux has been run, use that for approx flux; otherwise we'll compute it ourselves.
     Scalar approxFlux = -1.0;
@@ -1205,7 +1213,7 @@ void CModelAlgorithm::_apply(
         approxFlux = source.getPsfFlux();
     }
     try {
-        _applyImpl(result, exposure, *source.getFootprint(), psf, center, source.getShape(), approxFlux);
+        _applyImpl(result, exposure, *source.getFootprint(), psf, center, moments, approxFlux);
     } catch (...) {
         _impl->keys->copyResultToRecord(result, source);
         if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
