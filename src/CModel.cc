@@ -73,7 +73,13 @@ Pixel computeFluxInFootprint(
     afw::image::Image<Pixel> const & image,
     afw::detection::Footprint const & footprint
 ) {
-    return flattenArray(footprint, image.getArray(), image.getXY0()).asEigen().sum();
+    ndarray::Array<Pixel,1,1> flat = flattenArray(footprint, image.getArray(), image.getXY0());
+    // We're only using the flux to provide a scale for the problem that eases some numerical problems,
+    // so for objects with SNR < 1, it's probably better to use the RMS than the flux, since the latter
+    // can be negative.
+    Pixel a = flat.asEigen<Eigen::ArrayXpr>().sum();
+    Pixel b = std::sqrt(flat.asEigen<Eigen::ArrayXpr>().square().sum());
+    return std::max(a, b);
 }
 
 } // anonymous
@@ -263,6 +269,13 @@ struct CModelStageKeys {
         return result;
     }
 
+    bool hasDetailedErrorFlagSet(afw::table::BaseRecord const & record) const {
+        for (int i = 2; i < CModelStageResult::N_FLAGS; ++i) {
+            if (flags[i].isValid() && record.get(flags[i])) return true;
+        }
+        return false;
+    }
+
     afw::table::KeyTuple<afw::table::Flux> flux;
     afw::table::Key<afw::table::Moments<Scalar> > ellipse;
     afw::table::Key<Scalar> objective;
@@ -306,10 +319,12 @@ struct CModelKeys {
             prefix + ".flags.maxBadPixelFraction",
             "the fraction of bad/clipped pixels in the fit region exceeded region.maxBadPixelFraction"
         );
-        flags[CModelResult::NO_SHAPE] = schema.addField<afw::table::Flag>(
-            prefix + ".flags.noShape",
-            "the shape slot needed to initialize the parameters failed or was not defined"
-        );
+        if (!isForced) {
+            flags[CModelResult::NO_SHAPE] = schema.addField<afw::table::Flag>(
+                prefix + ".flags.noShape",
+                "the shape slot needed to initialize the parameters failed or was not defined"
+            );
+        }
         flags[CModelResult::NO_PSF] = schema.addField<afw::table::Flag>(
             prefix + ".flags.noPsf",
             "the multishapelet fit to the PSF model did not succeed"
@@ -358,6 +373,16 @@ struct CModelKeys {
         result.exp = exp.copyRecordToResult(record);
         result.dev = dev.copyRecordToResult(record);
         return result;
+    }
+
+    bool hasDetailedErrorFlagSet(afw::table::BaseRecord const & record) const {
+        for (int i = 1; i < CModelResult::N_FLAGS; ++i) {
+            if (flags[i].isValid() && record.get(flags[i])) return true;
+        }
+        if (initial.hasDetailedErrorFlagSet(record)) return true;
+        if (exp.hasDetailedErrorFlagSet(record)) return true;
+        if (dev.hasDetailedErrorFlagSet(record)) return true;
+        return false;
     }
 
     CModelStageKeys initial;
@@ -527,6 +552,8 @@ public:
             result.setFlag(CModelStageResult::FAILED, true);
             if (state & Optimizer::FAILED_MAX_ITERATIONS) {
                 result.setFlag(CModelStageResult::MAX_ITERATIONS, true);
+            } else if (state & Optimizer::FAILED_NAN) {
+                result.setFlag(CModelStageResult::NUMERIC_ERROR, true);
             }
         } else {
             result.setFlag(CModelStageResult::FAILED, false);
@@ -741,6 +768,19 @@ public:
         }
     }
 
+    // Check that if we've set the general error flag, we have a detailed flag to explain it.
+    // If we don't, log a warning.
+    void checkFlagDetails(afw::table::SourceRecord const & record) const {
+        if (!record.get(keys->flags[CModelResult::FAILED])) return;
+        if (keys->hasDetailedErrorFlagSet(record)) return;
+        pex::logging::Log::getDefaultLog().log(
+            pex::logging::Log::WARN,
+            (boost::format(
+                "Error unexplained by flags detected for source %s; please report this as a bug in CModel"
+            ) % record.getId()).str()
+        );
+    }
+
     template <typename T>
     void writeDiagnostics(
         CModelControl const & ctrl,
@@ -759,25 +799,21 @@ public:
         }
         afw::image::Image<T> subImage(*exposure.getMaskedImage().getImage(), bbox, afw::image::PARENT);
         subImage.writeFits(fits);
-        assert(fits.countHdus() == 1);
         if (ctrl.initial.doRecordHistory && result.initial.history.getTable()) {
             result.initial.history.writeFits(fits);
         } else {
             fits.createEmpty();
         }
-        assert(fits.countHdus() == 2);
         if (ctrl.exp.doRecordHistory && result.exp.history.getTable()) {
             result.exp.history.writeFits(fits);
         } else {
             fits.createEmpty();
         }
-        assert(fits.countHdus() == 3);
         if (ctrl.dev.doRecordHistory && result.dev.history.getTable()) {
             result.dev.history.writeFits(fits);
         } else {
             fits.createEmpty();
         }
-        assert(fits.countHdus() == 4);
     }
 
 };
@@ -1194,11 +1230,12 @@ void CModelAlgorithm::_apply(
     afw::geom::ellipses::Quadrupole moments;
     if (!source.getTable()->getShapeKey().isValid() ||
         (source.getTable()->getShapeFlagKey().isValid() && source.getShapeFlag())) {
-        source.set(_impl->keys->flags[Result::NO_SHAPE], true);
         if (getControl().fallbackInitialMomentsPsfFactor > 0.0) {
+            result.setFlag(Result::NO_SHAPE, true);
             moments = psf.evaluate().computeMoments().getCore();
             moments.scale(getControl().fallbackInitialMomentsPsfFactor);
         } else {
+            source.set(_impl->keys->flags[Result::NO_SHAPE], true);
             throw LSST_EXCEPT(
                 pex::exceptions::RuntimeErrorException,
                 "Shape slot algorithm failed or was not run, and fallbackInitialMomentsPsfFactor < 0"
@@ -1219,12 +1256,14 @@ void CModelAlgorithm::_apply(
         if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
             _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
         }
+        _impl->checkFlagDetails(source);
         throw;
     }
     _impl->keys->copyResultToRecord(result, source);
     if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
         _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
     }
+    _impl->checkFlagDetails(source);
 }
 
 template <typename PixelT>
