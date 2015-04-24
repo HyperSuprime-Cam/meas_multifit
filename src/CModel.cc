@@ -269,6 +269,13 @@ struct CModelStageKeys {
         return result;
     }
 
+    bool hasDetailedErrorFlagSet(afw::table::BaseRecord const & record) const {
+        for (int i = 2; i < CModelStageResult::N_FLAGS; ++i) {
+            if (flags[i].isValid() && record.get(flags[i])) return true;
+        }
+        return false;
+    }
+
     afw::table::KeyTuple<afw::table::Flux> flux;
     afw::table::Key<afw::table::Moments<Scalar> > ellipse;
     afw::table::Key<Scalar> objective;
@@ -364,6 +371,16 @@ struct CModelKeys {
         result.exp = exp.copyRecordToResult(record);
         result.dev = dev.copyRecordToResult(record);
         return result;
+    }
+
+    bool hasDetailedErrorFlagSet(afw::table::BaseRecord const & record) const {
+        for (int i = 1; i < CModelResult::N_FLAGS; ++i) {
+            if (flags[i].isValid() && record.get(flags[i])) return true;
+        }
+        if (initial.hasDetailedErrorFlagSet(record)) return true;
+        if (exp.hasDetailedErrorFlagSet(record)) return true;
+        if (dev.hasDetailedErrorFlagSet(record)) return true;
+        return false;
     }
 
     CModelStageKeys initial;
@@ -745,6 +762,19 @@ public:
                 );
             }
         }
+    }
+
+    // Check that if we've set the general error flag, we have a detailed flag to explain it.
+    // If we don't, log a warning.
+    void checkFlagDetails(afw::table::SourceRecord const & record) const {
+        if (!record.get(keys->flags[CModelResult::FAILED])) return;
+        if (keys->hasDetailedErrorFlagSet(record)) return;
+        pex::logging::Log::getDefaultLog().log(
+            pex::logging::Log::WARN,
+            (boost::format(
+                "Error unexplained by flags detected for source %s; please report this as a bug in CModel"
+            ) % record.getId()).str()
+        );
     }
 
     template <typename T>
@@ -1225,12 +1255,14 @@ void CModelAlgorithm::_apply(
         if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
             _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
         }
+        _impl->checkFlagDetails(source);
         throw;
     }
     _impl->keys->copyResultToRecord(result, source);
     if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
         _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
     }
+    _impl->checkFlagDetails(source);
 }
 
 template <typename PixelT>
