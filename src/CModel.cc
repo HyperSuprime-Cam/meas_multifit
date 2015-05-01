@@ -44,7 +44,8 @@ namespace {
 
 PTR(afw::detection::Footprint) _mergeFootprints(
     afw::detection::Footprint const & a,
-    afw::detection::Footprint const & b
+    afw::detection::Footprint const & b,
+    CModelResult & result
 ) {
     // Yuck: we have no routine that merges Footprints, so as a workaround we make a Mask from
     // the footprints, then run detection on the Mask to make a FootprintSet, then extract the
@@ -60,11 +61,17 @@ PTR(afw::detection::Footprint) _mergeFootprints(
         1 // npixMin
     );
     if (fpSet.getFootprints()->size() > 1u) {
-        throw LSST_EXCEPT(
-            pex::exceptions::RuntimeErrorException,
-            (boost::format("Footprints to be merged do not overlap: %s vs. %s")
-             % a.getBBox() % b.getBBox()).str()
-        );
+        result.setFlag(CModelResult::INCOMPLETE_FIT_REGION, true);
+        result.setFlag(CModelResult::FAILED, true);
+        int biggestArea = 0;
+        std::size_t biggestIndex = 0;
+        for (std::size_t n = 0; n < fpSet.getFootprints()->size(); ++n) {
+            if ((*fpSet.getFootprints())[n]->getArea() > biggestArea) {
+                biggestArea = (*fpSet.getFootprints())[n]->getArea();
+                biggestIndex = n;
+            }
+        }
+        return (*fpSet.getFootprints())[biggestIndex];
     }
     return fpSet.getFootprints()->front();
 }
@@ -313,7 +320,7 @@ struct CModelKeys {
         flags[CModelResult::FAILED] = flux.flag; // these keys refer to the same underlying field
         flags[CModelResult::MAX_AREA] = schema.addField<afw::table::Flag>(
             prefix + ".flags.maxArea",
-            "number of pixels in fit region exceeded the region.maxArea value (usually due to bad moments)"
+            "number of pixels in fit region exceeded the region.maxArea value."
         );
         flags[CModelResult::MAX_BAD_PIXEL_FRACTION] = schema.addField<afw::table::Flag>(
             prefix + ".flags.maxBadPixelFraction",
@@ -336,6 +343,10 @@ struct CModelKeys {
         flags[CModelResult::NO_CALIB] = schema.addField<afw::table::Flag>(
             prefix + ".flags.noCalib",
             "input exposure has no photometric calibration information"
+        );
+        flags[CModelResult::INCOMPLETE_FIT_REGION] = schema.addField<afw::table::Flag>(
+            prefix + ".flags.incompleteFitRegion",
+            "fit region was noncontiguous, so the largest contiguous region was used"
         );
     }
 
@@ -852,14 +863,17 @@ CModelAlgorithm::CModelAlgorithm(Control const & ctrl) :
 PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
     afw::image::Mask<> const & mask,
     afw::detection::Footprint const & footprint,
-    afw::geom::Box2I const & psfBBox
+    afw::geom::Box2I const & psfBBox,
+    Result & result
 ) const {
+    // We have multiple checks for maximum area below because it really pays off
+    // to short-circuit as early as possible when the region is huge; some of
+    // the steps below (especially growing and merging) can themselves be
+    // really slow with large footprints.
     PTR(afw::detection::Footprint) region;
     if (footprint.getArea() > getControl().region.maxArea) {
-        throw LSST_EXCEPT(
-            pex::exceptions::RuntimeErrorException,
-            "Maximum area exceeded by original footprint"
-        );
+        result.setFlag(Result::MAX_AREA, true);
+        return region;
     }
     region = afw::detection::growFootprint(
         footprint,
@@ -867,25 +881,27 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
         true
     );
     if (region->getArea() > getControl().region.maxArea) {
-        throw LSST_EXCEPT(
-            pex::exceptions::RuntimeErrorException,
-            "Maximum area exceeded by grown footprint"
-        );
+        result.setFlag(Result::MAX_AREA, true);
+        region.reset();
+        return region;
     }
+    // From here on, steps can only shrink the footprint (or in pathological cases,
+    // grow it by a tiny amount), so we don't have to check max area anymore.
     if (getControl().region.includePsfBBox && !region->getBBox().contains(psfBBox)) {
-        region = _mergeFootprints(*region, afw::detection::Footprint(psfBBox));
+        region = _mergeFootprints(*region, afw::detection::Footprint(psfBBox), result);
     }
     int originalArea = region->getArea();
     region->clipTo(mask.getBBox(afw::image::PARENT));
     if (region->getArea() == 0) {
-        throw LSST_EXCEPT(
-            pex::exceptions::RuntimeErrorException,
-            "Clipped area reduced to zero."
-        );
+        result.setFlag(Result::MAX_BAD_PIXEL_FRACTION, true);
+        region.reset();
+        return region;
     }
     region->intersectMask(mask, _impl->badPixelMask);
     if (originalArea - region->getArea() > originalArea*getControl().region.maxBadPixelFraction) {
+        result.setFlag(Result::MAX_BAD_PIXEL_FRACTION, true);
         region.reset();
+        return region;
     }
     return region;
 }
@@ -894,39 +910,54 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineFinalFitRegion(
     afw::image::Mask<> const & mask,
     afw::detection::Footprint const & footprint,
     afw::geom::Box2I const & psfBBox,
-    afw::geom::ellipses::Ellipse const & ellipse
+    afw::geom::ellipses::Ellipse const & ellipse,
+    Result & result
 ) const {
+    // We have multiple checks for maximum area below because it really pays off
+    // to short-circuit as early as possible when the region is huge; some of
+    // the steps below (especially growing and merging) can themselves be
+    // really slow with large footprints.
     PTR(afw::detection::Footprint) region;
     if (footprint.getArea() > getControl().region.maxArea) {
-        throw LSST_EXCEPT(
-            pex::exceptions::RuntimeErrorException,
-            "Maximum area exceeded by original footprint"
-        );
+        result.setFlag(Result::MAX_AREA, true);
+        return region;
     }
     region = afw::detection::growFootprint(
         footprint,
         getControl().region.nGrowFootprint,
         true
     );
+    if (region->getArea() > getControl().region.maxArea) {
+        result.setFlag(Result::MAX_AREA, true);
+        region.reset();
+        return region;
+    }
     afw::geom::ellipses::Ellipse fullEllipse(ellipse);
     fullEllipse.getCore().scale(getControl().region.nInitialRadii);
     if (fullEllipse.getCore().getArea() > getControl().region.maxArea) {
-        throw LSST_EXCEPT(
-            pex::exceptions::RuntimeErrorException,
-            "Maximum area exceeded by ellipse component of region"
-        );
+        result.setFlag(Result::MAX_AREA, true);
+        region.reset();
+        return region;
     }
     afw::detection::Footprint ellipseFootprint(fullEllipse);
     if (ellipseFootprint.getArea() > 0) {
-        region = _mergeFootprints(*region, ellipseFootprint);
+        region = _mergeFootprints(*region, ellipseFootprint, result);
     }
+    if (region->getArea() > getControl().region.maxArea) {
+        result.setFlag(Result::MAX_AREA, true);
+        region.reset();
+        return region;
+    }
+    // From here on, steps can only shrink the footprint (or in pathological cases,
+    // grow it by a tiny amount), so we don't have to check max area anymore.
     if (getControl().region.includePsfBBox && !region->getBBox().contains(psfBBox)) {
-        region = _mergeFootprints(*region, afw::detection::Footprint(psfBBox));
+        region = _mergeFootprints(*region, afw::detection::Footprint(psfBBox), result);
     }
     double originalArea = region->getArea();
     region->clipTo(mask.getBBox(afw::image::PARENT));
     region->intersectMask(mask, _impl->badPixelMask);
     if ((1.0 - region->getArea() / originalArea) > getControl().region.maxBadPixelFraction) {
+        result.setFlag(Result::MAX_BAD_PIXEL_FRACTION, true);
         region.reset();
     }
     return region;
@@ -959,26 +990,13 @@ void CModelAlgorithm::_applyImpl(
     afw::geom::Box2I psfBBox = exposure.getPsf()->computeImage(center)->getBBox(afw::image::PARENT);
 
     // Grow the footprint, clip bad pixels and the exposure bbox
-    PTR(afw::detection::Footprint) initialFitRegion;
-    try {
-        initialFitRegion = determineInitialFitRegion(
-            *exposure.getMaskedImage().getMask(),
-            footprint,
-            psfBBox
-        );
-    } catch (pex::exceptions::RuntimeErrorException) {
-        result.setFlag(CModelResult::MAX_AREA, true);
-        return;
-    }
-    if (!initialFitRegion) {
-        result.setFlag(CModelResult::MAX_BAD_PIXEL_FRACTION, true);
-        return;
-    }
-    if (initialFitRegion->getArea() > getControl().region.maxArea) {
-        result.setFlag(CModelResult::MAX_AREA, true);
-        return;
-    }
-    result.initialFitRegion = initialFitRegion;
+    result.initialFitRegion = determineInitialFitRegion(
+        *exposure.getMaskedImage().getMask(),
+        footprint,
+        psfBBox,
+        result
+    );
+    if (!result.initialFitRegion) return;
 
     // Negative approxFlux means we should come up with an estimate ourselves.
     // This is only used to avoid scaling problems in the optimizer, so it doesn't have to be very good.
@@ -994,7 +1012,7 @@ void CModelAlgorithm::_applyImpl(
 
     // Do the initial fit
     // TODO: use only 0th-order terms in psf
-    _impl->initial.fit(getControl().initial, result.initial, initialData, exposure, *initialFitRegion);
+    _impl->initial.fit(getControl().initial, result.initial, initialData, exposure, *result.initialFitRegion);
 
     if (result.initial.getFlag(CModelStageResult::FAILED)) return;
 
@@ -1002,43 +1020,29 @@ void CModelAlgorithm::_applyImpl(
     result.initial.model->writeEllipses(initialData.nonlinear.begin(), initialData.fixed.begin(),
                                         _impl->initial.ellipses.begin());
     _impl->initial.ellipses.front().transform(initialData.fitSysToMeasSys.geometric).inPlace();
-    PTR(afw::detection::Footprint) finalFitRegion;
-    try {
-        finalFitRegion = determineFinalFitRegion(
-            *exposure.getMaskedImage().getMask(),
-            footprint,
-            psfBBox,
-            _impl->initial.ellipses.front()
-        );
-    } catch (pex::exceptions::RuntimeErrorException) {
-        result.setFlag(CModelResult::MAX_AREA, true);
-        return;
-    }
-    if (!finalFitRegion) {
-        result.setFlag(CModelResult::MAX_BAD_PIXEL_FRACTION, true);
-        return;
-    }
-    if (finalFitRegion->getArea() > getControl().region.maxArea) {
-        result.setFlag(CModelResult::MAX_AREA, true);
-        return;
-    }
-
-    result.finalFitRegion = finalFitRegion;
+    result.finalFitRegion = determineFinalFitRegion(
+        *exposure.getMaskedImage().getMask(),
+        footprint,
+        psfBBox,
+        _impl->initial.ellipses.front(),
+        result
+    );
+    if (!result.finalFitRegion) return;
 
     // Do the exponential fit
     CModelStageData expData = initialData.changeModel(*_impl->exp.model);
-    _impl->exp.fit(getControl().exp, result.exp, expData, exposure, *finalFitRegion);
+    _impl->exp.fit(getControl().exp, result.exp, expData, exposure, *result.finalFitRegion);
 
     // Do the de Vaucouleur fit
     CModelStageData devData = initialData.changeModel(*_impl->dev.model);
-    _impl->dev.fit(getControl().dev, result.dev, devData, exposure, *finalFitRegion);
+    _impl->dev.fit(getControl().dev, result.dev, devData, exposure, *result.finalFitRegion);
 
     if (result.exp.getFlag(CModelStageResult::FAILED) ||result.dev.getFlag(CModelStageResult::FAILED))
         return;
 
     // Do the linear combination fit
     try {
-        _impl->fitLinear(getControl(), result, expData, devData, exposure, *finalFitRegion);
+        _impl->fitLinear(getControl(), result, expData, devData, exposure, *result.finalFitRegion);
     } catch (...) {
         result.setFlag(CModelResult::FAILED, true);
         throw;
@@ -1106,31 +1110,19 @@ void CModelAlgorithm::_applyForcedImpl(
     // in forced mode we can just use the final fit region immediately since we won't be changing
     // the initial fit ellipse.
     PTR(afw::detection::Footprint) finalFitRegion;
-    try {
-        finalFitRegion = determineFinalFitRegion(
-            *exposure.getMaskedImage().getMask(),
-            footprint,
-            psfBBox,
-            _impl->initial.ellipses.front()
-        );
-    } catch (pex::exceptions::RuntimeErrorException &) {
-        result.setFlag(CModelResult::MAX_AREA, true);
-        return;
-    }
-    if (!finalFitRegion) {
-        result.setFlag(CModelResult::MAX_BAD_PIXEL_FRACTION, true);
-        return;
-    }
-    if (finalFitRegion->getArea() > getControl().region.maxArea) {
-        result.setFlag(CModelResult::MAX_AREA, true);
-        return;
-    }
-    result.finalFitRegion = finalFitRegion;
+    result.finalFitRegion = determineFinalFitRegion(
+        *exposure.getMaskedImage().getMask(),
+        footprint,
+        psfBBox,
+        _impl->initial.ellipses.front(),
+        result
+    );
+    if (!result.finalFitRegion) return;
 
     // Do the initial fit (amplitudes only)
     if (!reference.initial.getFlag(CModelStageResult::FAILED)) {
         _impl->initial.fitLinear(getControl().initial, result.initial, initialData,
-                                 exposure, *finalFitRegion);
+                                 exposure, *result.finalFitRegion);
     }
 
     // Do the exponential fit (amplitudes only)
@@ -1138,7 +1130,7 @@ void CModelAlgorithm::_applyForcedImpl(
     if (!reference.exp.getFlag(CModelStageResult::FAILED)) {
         expData.nonlinear.deep() = reference.exp.nonlinear;
         expData.fixed.deep() = reference.exp.fixed;
-        _impl->exp.fitLinear(getControl().exp, result.exp, expData, exposure, *finalFitRegion);
+        _impl->exp.fitLinear(getControl().exp, result.exp, expData, exposure, *result.finalFitRegion);
     }
 
     // Do the de Vaucouleur fit (amplitudes only)
@@ -1146,7 +1138,7 @@ void CModelAlgorithm::_applyForcedImpl(
     if (!reference.dev.getFlag(CModelStageResult::FAILED)) {
         devData.nonlinear.deep() = reference.dev.nonlinear;
         devData.fixed.deep() = reference.dev.fixed;
-        _impl->dev.fitLinear(getControl().dev, result.dev, devData, exposure, *finalFitRegion);
+        _impl->dev.fitLinear(getControl().dev, result.dev, devData, exposure, *result.finalFitRegion);
     }
 
     if (result.exp.getFlag(CModelStageResult::FAILED) ||result.dev.getFlag(CModelStageResult::FAILED))
@@ -1154,7 +1146,7 @@ void CModelAlgorithm::_applyForcedImpl(
 
     // Do the linear combination fit
     try {
-        _impl->fitLinear(getControl(), result, expData, devData, exposure, *finalFitRegion);
+        _impl->fitLinear(getControl(), result, expData, devData, exposure, *result.finalFitRegion);
     } catch (...) {
         result.setFlag(CModelResult::FAILED, true);
         throw;

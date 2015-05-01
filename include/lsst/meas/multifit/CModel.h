@@ -305,6 +305,7 @@ struct CModelResult {
         NO_PSF,
         NO_WCS,
         NO_CALIB,
+        INCOMPLETE_FIT_REGION,
         N_FLAGS
     };
 
@@ -355,12 +356,13 @@ public:
      *  This routine grows the given footprint by nGrowFootprint, then clips on the bounding box
      *  of the given mask and removes pixels indicated as bad by badMaskPlanes.
      *
-     *  If more than maxBadPixelFraction pixels are clipped, the returned pointer is null.
+     *  Failures are indicated by setting flag bits in the given Result object.
      */
     PTR(afw::detection::Footprint) determineInitialFitRegion(
         afw::image::Mask<> const & mask,
         afw::detection::Footprint const & footprint,
-        afw::geom::Box2I const & psfBBox
+        afw::geom::Box2I const & psfBBox,
+        Result & result
     ) const;
 
     /**
@@ -370,13 +372,14 @@ public:
      *  the given ellipse scaled by nInitialRadii.  It then clips on the bounding box of the
      *  given mask and removes pixels indicated as bad by badMaskPlanes.
      *
-     *  If more than maxBadPixelFraction pixels are clipped, the returned pointer is null.
+     *  Failures are indicated by setting flag bits in the given Result object.
      */
     PTR(afw::detection::Footprint) determineFinalFitRegion(
         afw::image::Mask<> const & mask,
         afw::detection::Footprint const & footprint,
         afw::geom::Box2I const & psfBBox,
-        afw::geom::ellipses::Ellipse const & ellipse
+        afw::geom::ellipses::Ellipse const & ellipse,
+        Result & result
     ) const;
 
     Result apply(
