@@ -306,6 +306,7 @@ struct CModelResult {
         NO_WCS,
         NO_CALIB,
         INCOMPLETE_FIT_REGION,
+        BAD_CENTROID,
         N_FLAGS
     };
 
@@ -362,6 +363,7 @@ public:
         afw::image::Mask<> const & mask,
         afw::detection::Footprint const & footprint,
         afw::geom::Box2I const & psfBBox,
+        afw::geom::Point2D const & center,
         Result & result
     ) const;
 
