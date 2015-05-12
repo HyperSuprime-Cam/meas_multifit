@@ -213,6 +213,11 @@ struct CModelStageKeys {
             if (ctrl.doRecordTime) {
                 time = schema.addField<Scalar>(prefix + ".time", "Time spent in stage", "seconds");
             }
+        } else {
+            flags[CModelStageResult::BAD_REFERENCE] = schema.addField<afw::table::Flag>(
+                prefix + ".flags.badReference",
+                "The original fit in the reference catalog failed."
+            );
         }
         flags[CModelStageResult::FAILED] = flux.flag; // these flags refer to the same underlying field
     }
@@ -332,6 +337,11 @@ struct CModelKeys {
             flags[CModelResult::NO_SHAPE] = schema.addField<afw::table::Flag>(
                 prefix + ".flags.noShape",
                 "the shape slot needed to initialize the parameters failed or was not defined"
+            );
+        } else {
+            flags[CModelResult::BAD_REFERENCE] = schema.addField<afw::table::Flag>(
+                prefix + ".flags.badReference",
+                "The original fit in the reference catalog failed."
             );
         }
         flags[CModelResult::NO_PSF] = schema.addField<afw::table::Flag>(
@@ -1125,6 +1135,11 @@ void CModelAlgorithm::_applyForcedImpl(
 ) const {
     afw::geom::Box2I psfBBox = exposure.getPsf()->computeImage(center)->getBBox(afw::image::PARENT);
 
+    if (reference.getFlag(CModelResult::FAILED)) {
+        result.setFlag(CModelResult::BAD_REFERENCE, true);
+        result.setFlag(CModelResult::FAILED, true);
+    }
+
     // Negative approxFlux means we should come up with an estimate ourselves.
     // This is only used to avoid scaling problems in the optimizer, so it doesn't have to be very good.
     if (approxFlux < 0.0) {
@@ -1162,6 +1177,9 @@ void CModelAlgorithm::_applyForcedImpl(
     if (!reference.initial.getFlag(CModelStageResult::FAILED)) {
         _impl->initial.fitLinear(getControl().initial, result.initial, initialData,
                                  exposure, *result.finalFitRegion);
+    } else {
+        result.initial.setFlag(CModelStageResult::BAD_REFERENCE, true);
+        result.initial.setFlag(CModelStageResult::FAILED, true);
     }
 
     // Do the exponential fit (amplitudes only)
@@ -1170,6 +1188,9 @@ void CModelAlgorithm::_applyForcedImpl(
         expData.nonlinear.deep() = reference.exp.nonlinear;
         expData.fixed.deep() = reference.exp.fixed;
         _impl->exp.fitLinear(getControl().exp, result.exp, expData, exposure, *result.finalFitRegion);
+    } else {
+        result.exp.setFlag(CModelStageResult::BAD_REFERENCE, true);
+        result.exp.setFlag(CModelStageResult::FAILED, true);
     }
 
     // Do the de Vaucouleur fit (amplitudes only)
@@ -1178,6 +1199,9 @@ void CModelAlgorithm::_applyForcedImpl(
         devData.nonlinear.deep() = reference.dev.nonlinear;
         devData.fixed.deep() = reference.dev.fixed;
         _impl->dev.fitLinear(getControl().dev, result.dev, devData, exposure, *result.finalFitRegion);
+    } else {
+        result.dev.setFlag(CModelStageResult::BAD_REFERENCE, true);
+        result.dev.setFlag(CModelStageResult::FAILED, true);
     }
 
     if (result.exp.getFlag(CModelStageResult::FAILED) ||result.dev.getFlag(CModelStageResult::FAILED))
