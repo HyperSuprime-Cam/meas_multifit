@@ -269,6 +269,7 @@ struct CModelStageResult {
         TR_SMALL,
         MAX_ITERATIONS,
         NUMERIC_ERROR,
+        BAD_REFERENCE,
         N_FLAGS
     };
 
@@ -309,6 +310,7 @@ struct CModelResult {
         NO_CALIB,
         INCOMPLETE_FIT_REGION,
         BAD_CENTROID,
+        BAD_REFERENCE,
         N_FLAGS
     };
 

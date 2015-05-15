@@ -213,6 +213,11 @@ struct CModelStageKeys {
             if (ctrl.doRecordTime) {
                 time = schema.addField<Scalar>(prefix + ".time", "Time spent in stage", "seconds");
             }
+        } else {
+            flags[CModelStageResult::BAD_REFERENCE] = schema.addField<afw::table::Flag>(
+                prefix + ".flags.badReference",
+                "The original fit in the reference catalog failed."
+            );
         }
         flags[CModelStageResult::FAILED] = flux.flag; // these flags refer to the same underlying field
     }
@@ -332,6 +337,11 @@ struct CModelKeys {
             flags[CModelResult::NO_SHAPE] = schema.addField<afw::table::Flag>(
                 prefix + ".flags.noShape",
                 "the shape slot needed to initialize the parameters failed or was not defined"
+            );
+        } else {
+            flags[CModelResult::BAD_REFERENCE] = schema.addField<afw::table::Flag>(
+                prefix + ".flags.badReference",
+                "The original fit in the reference catalog failed."
             );
         }
         flags[CModelResult::NO_PSF] = schema.addField<afw::table::Flag>(
@@ -733,33 +743,36 @@ public:
         CModelControl const & ctrl, CModelStageData & data,
         afw::geom::ellipses::Quadrupole const & moments
     ) const {
-
+        afw::geom::ellipses::Ellipse psfEllipse = data.psf.evaluate().computeMoments();
         // Deconvolve the moments ellipse, with a floor to keep the result from
         // having moments <= 0
-        afw::geom::ellipses::Ellipse psfEllipse = data.psf.evaluate().computeMoments();
-        afw::geom::ellipses::Quadrupole psfMoments(psfEllipse.getCore());
-        Scalar mir2 = ctrl.minInitialRadius * ctrl.minInitialRadius;
-        Scalar ixx = std::max(moments.getIxx() - psfMoments.getIxx(), mir2);
-        Scalar iyy = std::max(moments.getIyy() - psfMoments.getIyy(), mir2);
-        Scalar ixy = moments.getIxy() - psfMoments.getIxy();
+        Scalar const mir2 = ctrl.minInitialRadius * ctrl.minInitialRadius;
+        Scalar ixx = mir2, iyy = mir2, ixy = 0.0;
+        try {
+            afw::geom::ellipses::Quadrupole psfMoments(psfEllipse.getCore());
+            ixx = std::max(moments.getIxx() - psfMoments.getIxx(), mir2);
+            iyy = std::max(moments.getIyy() - psfMoments.getIyy(), mir2);
+            ixy = moments.getIxy() - psfMoments.getIxy();
+        } catch (pex::exceptions::InvalidParameterException &) {
+            // let ixx, iyy, ixy stay at initial minimum values
+        }
         if (ixx*iyy < ixy*ixy) {
             ixy = 0.0;
         }
-        afw::geom::ellipses::Quadrupole deconvolvedMoments(
-            ixx, iyy, ixy,
-            true // throw if ellipse is invalid
-        );
+        afw::geom::ellipses::Quadrupole deconvolvedMoments(ixx, iyy, ixy, false);
+        try {
+            deconvolvedMoments.normalize();
+        } catch (pex::exceptions::InvalidParameterException &) {
+            deconvolvedMoments = afw::geom::ellipses::Quadrupole(mir2, mir2, 0.0);
+        }
         afw::geom::ellipses::Ellipse deconvolvedEllipse(
             deconvolvedMoments,
             afw::geom::Point2D(data.measSysCenter - psfEllipse.getCenter())
         );
-
         // Convert ellipse from moments to half-light using the ratio for this profile
         deconvolvedEllipse.getCore().scale(1.0 / initial.profile->getMomentsRadiusFactor());
-
         // Transform the deconvolved ellipse from MeasSys to FitSys
         deconvolvedEllipse.transform(data.fitSysToMeasSys.geometric.invert()).inPlace();
-
         // Convert to the ellipse parametrization used by the Model (assigning to an ellipse converts
         // between parametrizations)
         assert(initial.ellipses.size() == 1u); // should be true of all Models that come from RadialProfiles
@@ -1122,6 +1135,11 @@ void CModelAlgorithm::_applyForcedImpl(
 ) const {
     afw::geom::Box2I psfBBox = exposure.getPsf()->computeImage(center)->getBBox(afw::image::PARENT);
 
+    if (reference.getFlag(CModelResult::FAILED)) {
+        result.setFlag(CModelResult::BAD_REFERENCE, true);
+        result.setFlag(CModelResult::FAILED, true);
+    }
+
     // Negative approxFlux means we should come up with an estimate ourselves.
     // This is only used to avoid scaling problems in the optimizer, so it doesn't have to be very good.
     if (approxFlux < 0.0) {
@@ -1159,6 +1177,9 @@ void CModelAlgorithm::_applyForcedImpl(
     if (!reference.initial.getFlag(CModelStageResult::FAILED)) {
         _impl->initial.fitLinear(getControl().initial, result.initial, initialData,
                                  exposure, *result.finalFitRegion);
+    } else {
+        result.initial.setFlag(CModelStageResult::BAD_REFERENCE, true);
+        result.initial.setFlag(CModelStageResult::FAILED, true);
     }
 
     // Do the exponential fit (amplitudes only)
@@ -1167,6 +1188,9 @@ void CModelAlgorithm::_applyForcedImpl(
         expData.nonlinear.deep() = reference.exp.nonlinear;
         expData.fixed.deep() = reference.exp.fixed;
         _impl->exp.fitLinear(getControl().exp, result.exp, expData, exposure, *result.finalFitRegion);
+    } else {
+        result.exp.setFlag(CModelStageResult::BAD_REFERENCE, true);
+        result.exp.setFlag(CModelStageResult::FAILED, true);
     }
 
     // Do the de Vaucouleur fit (amplitudes only)
@@ -1175,6 +1199,9 @@ void CModelAlgorithm::_applyForcedImpl(
         devData.nonlinear.deep() = reference.dev.nonlinear;
         devData.fixed.deep() = reference.dev.fixed;
         _impl->dev.fitLinear(getControl().dev, result.dev, devData, exposure, *result.finalFitRegion);
+    } else {
+        result.dev.setFlag(CModelStageResult::BAD_REFERENCE, true);
+        result.dev.setFlag(CModelStageResult::FAILED, true);
     }
 
     if (result.exp.getFlag(CModelStageResult::FAILED) ||result.dev.getFlag(CModelStageResult::FAILED))
