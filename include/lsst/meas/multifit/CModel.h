@@ -187,13 +187,15 @@ struct CModelControl : public algorithms::AlgorithmControl {
 
     CModelControl() :
         algorithms::AlgorithmControl("cmodel", 2.5),
-        psfName("multishapelet.psf"), minInitialRadius(0.1),
+        psfName("multishapelet.psf"), minInitialRadius(3.0e-3),
         fallbackInitialMomentsPsfFactor(1.5)
     {
         initial.nComponents = 3; // use very rough model in initial fit
         initial.optimizer.gradientThreshold = 1E-2; // with coarse convergence criteria
         initial.optimizer.minTrustRadiusThreshold = 1E-2;
         dev.profileName = "luv";
+        exp.nComponents = 6;
+        exp.optimizer.maxOuterIterations = 250;
     }
 
     PTR(CModelControl) clone() const {
