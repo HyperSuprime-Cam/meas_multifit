@@ -95,12 +95,6 @@ struct CModelStageControl {
         "Configuration for how the objective surface is explored.  Ignored for forced fitting"
     );
 
-    LSST_NESTED_CONTROL_FIELD(
-        likelihood, lsst.meas.multifit.multifitLib, UnitTransformedLikelihoodControl,
-        "Configuration for how the compound model is evaluated and residuals are weighted in this "
-        "stage of the fit"
-    );
-
     LSST_CONTROL_FIELD(
         doRecordHistory, bool,
         "Whether to record the steps the optimizer takes (or just the number, if running as a plugin)"
@@ -235,12 +229,6 @@ struct CModelControl : public algorithms::AlgorithmControl {
     LSST_NESTED_CONTROL_FIELD(
         dev, lsst.meas.multifit.multifitLib, CModelStageControl,
         "Independent fit of the de Vaucouleur component"
-    );
-
-    LSST_NESTED_CONTROL_FIELD(
-        likelihood, lsst.meas.multifit.multifitLib, UnitTransformedLikelihoodControl,
-        "configuration for how the compound model is evaluated and residuals are weighted in the exp+dev "
-        "linear combination fit"
     );
 
     LSST_CONTROL_FIELD(
