@@ -271,6 +271,8 @@ struct CModelStageResult {
     PTR(UnitTransformedLikelihood) likelihood;
     Scalar flux;
     Scalar fluxSigma;
+    Scalar apCov;
+    Scalar effectiveArea;
     Scalar objective;
     Scalar time;
     afw::geom::ellipses::Quadrupole ellipse;
@@ -308,6 +310,8 @@ struct CModelResult {
 
     Scalar flux;
     Scalar fluxSigma;
+    Scalar apCov;
+    Scalar effectiveArea;
     Scalar fracDev;
     Scalar objective;
 

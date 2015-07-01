@@ -176,7 +176,9 @@ struct CModelStageKeys {
         bool isForced,
         CModelStageControl const & ctrl
     ) :
-        flux(afw::table::addFluxFields(schema, prefix + ".flux", "flux from the " + stage + " fit"))
+        flux(afw::table::addFluxFields(schema, prefix + ".flux", "flux from the " + stage + " fit")),
+        apCov(schema.addField<Scalar>(prefix + ".apCov", "covariance with a large aperture flux")),
+        nEff(schema.addField<Scalar>(prefix + ".effectiveArea", "effective area of the PSF-convolved model"))
     {
         if (!isForced) {
             ellipse = schema.addField<afw::table::Moments<Scalar> >(
@@ -248,6 +250,8 @@ struct CModelStageKeys {
     void copyResultToRecord(CModelStageResult const & result, afw::table::BaseRecord & record) {
         record.set(flux.meas, result.flux);
         record.set(flux.err, result.fluxSigma);
+        record.set(apCov, result.apCov);
+        record.set(nEff, result.effectiveArea);
         record.set(flux.flag, result.getFlag(CModelStageResult::FAILED));
         if (objective.isValid()) {
             record.set(objective, result.objective);
@@ -291,6 +295,8 @@ struct CModelStageKeys {
     }
 
     afw::table::KeyTuple<afw::table::Flux> flux;
+    afw::table::Key<Scalar> apCov;
+    afw::table::Key<Scalar> nEff;
     afw::table::Key<afw::table::Moments<Scalar> > ellipse;
     afw::table::Key<Scalar> objective;
     afw::table::Key<afw::table::Flag> flags[CModelStageResult::N_FLAGS];
@@ -321,6 +327,8 @@ struct CModelKeys {
                    prefix + ".center", "center position used in CModel fit", "pixels"
                )),
         flux(afw::table::addFluxFields(schema, prefix + ".flux", "flux from the final cmodel fit")),
+        apCov(schema.addField<Scalar>(prefix + ".apCov", "covariance with a large aperture flux")),
+        nEff(schema.addField<Scalar>(prefix + ".effectiveArea", "effective area of the PSF-convolved model")),
         fracDev(schema.addField<Scalar>(prefix + ".fracDev", "fraction of flux in de Vaucouleur component")),
         objective(schema.addField<Scalar>(prefix + ".objective", "-ln(likelihood) (chi^2) in cmodel fit"))
     {
@@ -384,6 +392,8 @@ struct CModelKeys {
         dev.copyResultToRecord(result.dev, record);
         record.set(flux.meas, result.flux);
         record.set(flux.err, result.fluxSigma);
+        record.set(apCov, result.apCov);
+        record.set(nEff, result.effectiveArea);
         record.set(fracDev, result.fracDev);
         record.set(objective, result.objective);
         for (int b = 0; b < CModelResult::N_FLAGS; ++b) {
@@ -417,6 +427,8 @@ struct CModelKeys {
     CModelStageKeys dev;
     afw::table::Key<afw::table::Point<Scalar> > center;
     afw::table::KeyTuple<afw::table::Flux> flux;
+    afw::table::Key<Scalar> apCov;
+    afw::table::Key<Scalar> nEff;
     afw::table::Key<Scalar> fracDev;
     afw::table::Key<Scalar> objective;
     afw::table::Key<afw::table::Flag> flags[CModelResult::N_FLAGS];
@@ -498,7 +510,7 @@ struct WeightSums {
     explicit WeightSums(
         ndarray::Array<Pixel const,2,-1> const & modelMatrix,
         ndarray::Array<Pixel const,1,1> const & variance
-    ) : fluxVar(0.0), norm(0.0)
+    ) : fluxVar(0.0), apCov(0.0), nEff(0.0), norm(0.0)
     {
         assert(modelMatrix.getSize<1>() == 1);
         run(modelMatrix.transpose()[0].asEigen<Eigen::ArrayXpr>(), variance.asEigen<Eigen::ArrayXpr>());
@@ -507,7 +519,7 @@ struct WeightSums {
     explicit WeightSums(
         ndarray::Array<Pixel const,1,1> const & model,
         ndarray::Array<Pixel const,1,1> const & variance
-    ) : fluxVar(0.0), norm(0.0)
+    ) : fluxVar(0.0), apCov(0.0), nEff(0.0), norm(0.0)
     {
         run(model.asEigen<Eigen::ArrayXpr>(), variance.asEigen<Eigen::ArrayXpr>());
     }
@@ -519,11 +531,16 @@ struct WeightSums {
         double w = model.sum();
         double ww = model.square().sum();
         double wwv = (model.square()*variance).sum();
+        double wv = (model*variance).sum();
         norm = w/ww;
         fluxVar = wwv*norm;
+        apCov = wv*norm;
+        nEff = w*norm;
     }
 
     double fluxVar;
+    double apCov;
+    double nEff;
     double norm;
 };
 
@@ -560,7 +577,7 @@ public:
     void fillResult(
         CModelStageResult & result,
         CModelStageData const & data,
-        Scalar fluxVar
+        WeightSums const & sums
     ) const {
         // these are shallow assignments
         result.nonlinear = data.nonlinear;
@@ -568,7 +585,9 @@ public:
         result.fixed = data.fixed;
         // flux is just the amplitude converted from fitSys to measSys
         result.flux = data.amplitudes[0] * data.fitSysToMeasSys.flux;
-        result.fluxSigma = std::sqrt(fluxVar) * data.fitSysToMeasSys.flux;
+        result.fluxSigma = std::sqrt(sums.fluxVar)*data.fitSysToMeasSys.flux;
+        result.apCov = sums.apCov*data.fitSysToMeasSys.flux*data.fitSysToMeasSys.flux;
+        result.effectiveArea = sums.nEff*data.fitSysToMeasSys.geometric.getLinear().computeDeterminant();
         // to compute the ellipse, we need to first read the nonlinear parameters into the workspace
         // ellipse vector, then transform from fitSys to measSys.
         model->writeEllipses(data.nonlinear.begin(), data.fixed.begin(), ellipses.begin());
@@ -641,7 +660,7 @@ public:
         );
 
         // Set parameter vectors, flux values, ellipse on result.
-        fillResult(result, data, sums.fluxVar);
+        fillResult(result, data, sums);
 
         if (ctrl.doRecordTime) {
             result.time = (daf::base::DateTime::now().nsecs() - startTime)/1E9;
@@ -670,7 +689,7 @@ public:
 
         WeightSums sums(modelMatrix, result.likelihood->getVariance());
 
-        fillResult(result, data, sums.fluxVar);
+        fillResult(result, data, sums);
         result.setFlag(CModelStageResult::FAILED, false);
     }
 
@@ -771,6 +790,8 @@ public:
         model.asEigen() = modelMatrix.asEigen() * amplitudes.cast<Pixel>();
         WeightSums sums(model, likelihood.getVariance());
         result.fluxSigma = expData.fitSysToMeasSys.flux*std::sqrt(sums.fluxVar);
+        result.apCov = sums.apCov*expData.fitSysToMeasSys.flux*expData.fitSysToMeasSys.flux;
+        result.effectiveArea = sums.nEff*expData.fitSysToMeasSys.geometric.getLinear().computeDeterminant();
         result.setFlag(CModelResult::FAILED, false);
 
         result.fracDev = amplitudes[1] / amplitudes.sum();
