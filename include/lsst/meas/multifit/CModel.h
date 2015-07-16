@@ -333,6 +333,8 @@ struct CModelResult {
     PTR(afw::detection::Footprint) initialFitRegion;
     PTR(afw::detection::Footprint) finalFitRegion;
 
+    LocalUnitTransform fitSysToMeasSys;
+
 #ifndef SWIG
     std::bitset<N_FLAGS> flags;
 #endif
