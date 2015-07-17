@@ -55,7 +55,7 @@ public:
     LSST_CONTROL_FIELD(useApproximateExp, bool,
                        "whether to use fast approximate exponentials when evaluating the model");
 
-    UnitTransformedLikelihoodControl() : usePixelWeights(true), useApproximateExp(false) {}
+    UnitTransformedLikelihoodControl() : usePixelWeights(false), useApproximateExp(false) {}
 
 };
 
