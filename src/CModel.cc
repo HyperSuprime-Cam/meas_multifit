@@ -1472,10 +1472,16 @@ void CModelAlgorithm::_applyForced(
         _applyForcedImpl(result, exposure, *source.getFootprint(), psf, center, refResult, approxFlux);
     } catch (...) {
         _impl->keys->copyResultToRecord(result, source);
+        if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
+            _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
+        }
         _impl->checkFlagDetails(source);
         throw;
     }
     _impl->keys->copyResultToRecord(result, source);
+    if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
+        _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
+    }
     _impl->checkFlagDetails(source);
 }
 
