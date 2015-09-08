@@ -356,6 +356,12 @@ struct CModelKeys {
                 prefix + ".flags.noShape",
                 "the shape slot needed to initialize the parameters failed or was not defined"
             );
+            flags[CModelResult::SMALL_SHAPE] = schema.addField<afw::table::Flag>(
+                prefix + ".flags.smallShape",
+                (boost::format(
+                    "initial parameter guess resulted in negative radius; used minimum of %f pixels instead."
+                ) % ctrl.minInitialRadius).str()
+            );
         } else {
             flags[CModelResult::BAD_REFERENCE] = schema.addField<afw::table::Flag>(
                 prefix + ".flags.badReference",
@@ -831,7 +837,8 @@ public:
 
     void guessParametersFromMoments(
         CModelControl const & ctrl, CModelStageData & data,
-        afw::geom::ellipses::Quadrupole const & moments
+        afw::geom::ellipses::Quadrupole const & moments,
+        CModelResult & result
     ) const {
         afw::geom::ellipses::Ellipse psfEllipse = data.psf.evaluate().computeMoments();
         // Deconvolve the moments ellipse, with a floor to keep the result from
@@ -845,15 +852,18 @@ public:
             ixy = moments.getIxy() - psfMoments.getIxy();
         } catch (pex::exceptions::InvalidParameterException &) {
             // let ixx, iyy, ixy stay at initial minimum values
+            result.setFlag(CModelResult::SMALL_SHAPE, true); // set this now, unset it on success later
         }
         if (ixx*iyy < ixy*ixy) {
             ixy = 0.0;
+            result.setFlag(CModelResult::SMALL_SHAPE, true); // set this now, unset it on success later
         }
         afw::geom::ellipses::Quadrupole deconvolvedMoments(ixx, iyy, ixy, false);
         try {
             deconvolvedMoments.normalize();
         } catch (pex::exceptions::InvalidParameterException &) {
             deconvolvedMoments = afw::geom::ellipses::Quadrupole(mir2, mir2, 0.0);
+            result.setFlag(CModelResult::SMALL_SHAPE, true);
         }
         afw::geom::ellipses::Ellipse deconvolvedEllipse(
             deconvolvedMoments,
@@ -1163,7 +1173,7 @@ void CModelAlgorithm::_applyImpl(
     result.fitSysToMeasSys = initialData.fitSysToMeasSys;
 
     // Initialize the parameter vectors by doing deconvolving the moments
-    _impl->guessParametersFromMoments(getControl(), initialData, moments);
+    _impl->guessParametersFromMoments(getControl(), initialData, moments, result);
 
     // Do the initial fit
     // TODO: use only 0th-order terms in psf
