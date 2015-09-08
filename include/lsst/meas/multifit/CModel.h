@@ -181,7 +181,7 @@ struct CModelControl : public algorithms::AlgorithmControl {
 
     CModelControl() :
         algorithms::AlgorithmControl("cmodel", 2.5),
-        psfName("multishapelet.psf"), minInitialRadius(3.0e-3),
+        psfName("multishapelet.psf"), minInitialRadius(0.1),
         fallbackInitialMomentsPsfFactor(1.5)
     {
         initial.nComponents = 3; // use very rough model in initial fit
