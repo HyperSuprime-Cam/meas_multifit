@@ -575,7 +575,7 @@ struct WeightSums {
         double wwv = (model.square()*variance).sum();
         norm = w/ww;
         fluxInner = wd*norm;
-        fluxVar = wwv*norm;
+        fluxVar = wwv*norm*norm;
     }
 
     double fluxInner;

@@ -29,6 +29,8 @@ import numpy
 import lsst.utils.tests
 import lsst.shapelet
 import lsst.afw.geom.ellipses
+import lsst.afw.image
+import lsst.meas.algorithms
 import lsst.meas.multifit
 
 numpy.random.seed(500)
@@ -43,6 +45,15 @@ def makeMultiShapeletCircularGaussian(sigma):
     m.getElements().push_back(s)
     return m
 
+def computePsfFlux(centroid, exposure):
+    schema = lsst.afw.table.SourceTable.makeMinimalSchema()
+    builder = lsst.meas.algorithms.MeasureSourcesBuilder()
+    builder.addAlgorithm(lsst.meas.algorithms.PsfFluxControl())
+    measurer = builder.build(schema)
+    table = lsst.afw.table.SourceTable.make(schema)
+    record = table.makeRecord()
+    measurer.apply(record, exposure, centroid, False)
+    return record.get("flux.psf"), record.get("flux.psf.err")
 
 class CModelTestCase(lsst.utils.tests.TestCase):
 
@@ -106,6 +117,26 @@ class CModelTestCase(lsst.utils.tests.TestCase):
         self.assertClose(result.flux, self.trueFlux, rtol=0.01)
         self.assertClose(result.fluxSigma, 0.0, rtol=0.0, atol=0.0)
 
+    def testVsPsfFlux(self):
+        """Test that CModel produces results comparable a simplified reimplementation of PsfFlux.
+        """
+        noiseSigma = 1.0
+        for fluxFactor in (1.0, 10.0, 100.0):
+            exposure = self.exposure.Factory(self.exposure, True)
+            exposure.getMaskedImage().getImage().getArray()[:] *= fluxFactor
+            exposure.getMaskedImage().getVariance().getArray()[:] = noiseSigma**2
+            exposure.getMaskedImage().getImage().getArray()[:] += \
+                noiseSigma*numpy.random.randn(exposure.getHeight(), exposure.getWidth())
+            ctrl = lsst.meas.multifit.CModelControl()
+            algorithm = lsst.meas.multifit.CModelAlgorithm(ctrl)
+            cmodel = algorithm.apply(
+                exposure, self.footprint,
+                makeMultiShapeletCircularGaussian(self.psfSigma),
+                self.xyPosition, self.exposure.getPsf().computeShape()
+                )
+            psfFlux, psfFluxSigma = computePsfFlux(self.xyPosition, exposure)
+            self.assertClose(psfFlux, cmodel.flux, rtol=0.03)
+            self.assertClose(psfFluxSigma, cmodel.fluxSigma, rtol=0.03)
 
 def suite():
     """Returns a suite containing all the test cases in this module."""
