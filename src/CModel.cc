@@ -340,7 +340,9 @@ struct CModelKeys {
         fluxInner(schema.addField<Scalar>(prefix + ".flux.inner",
                                           "flux within the fit region, with no extrapolation")),
         fracDev(schema.addField<Scalar>(prefix + ".fracDev", "fraction of flux in de Vaucouleur component")),
-        objective(schema.addField<Scalar>(prefix + ".objective", "-ln(likelihood) (chi^2) in cmodel fit"))
+        objective(schema.addField<Scalar>(prefix + ".objective", "-ln(likelihood) (chi^2) in cmodel fit")),
+        initialFitArea(schema.addField<int>(prefix + ".initialFitArea", "area of the initial fit region")),
+        finalFitArea(schema.addField<int>(prefix + ".finalFitArea", "area of the final fit region"))
     {
         flags[CModelResult::FAILED] = flux.flag; // these keys refer to the same underlying field
         flags[CModelResult::MAX_AREA] = schema.addField<afw::table::Flag>(
@@ -413,6 +415,12 @@ struct CModelKeys {
         record.set(fluxInner, result.fluxInner);
         record.set(fracDev, result.fracDev);
         record.set(objective, result.objective);
+        if (result.initialFitRegion) {
+            record.set(initialFitArea, result.initialFitRegion->getArea());
+        }
+        if (result.finalFitRegion) {
+            record.set(finalFitArea, result.finalFitRegion->getArea());
+        }
         for (int b = 0; b < CModelResult::N_FLAGS; ++b) {
             if (flags[b].isValid()) {
                 record.set(flags[b], result.flags[b]);
@@ -465,6 +473,8 @@ struct CModelKeys {
     afw::table::Key<Scalar> fluxInner;
     afw::table::Key<Scalar> fracDev;
     afw::table::Key<Scalar> objective;
+    afw::table::Key<int> initialFitArea;
+    afw::table::Key<int> finalFitArea;
     afw::table::Key<afw::table::Flag> flags[CModelResult::N_FLAGS];
 };
 
