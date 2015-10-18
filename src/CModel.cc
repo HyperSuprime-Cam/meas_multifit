@@ -364,6 +364,9 @@ struct CModelKeys {
                     "initial parameter guess resulted in negative radius; used minimum of %f pixels instead."
                 ) % ctrl.minInitialRadius).str()
             );
+            ellipse = schema.addField<afw::table::Moments<Scalar> >(
+                prefix + ".ellipse", "fracDev-weighted average of exp.ellipse and dev.ellipse"
+            );
         } else {
             flags[CModelResult::BAD_REFERENCE] = schema.addField<afw::table::Flag>(
                 prefix + ".flags.badReference",
@@ -410,6 +413,13 @@ struct CModelKeys {
         initial.copyResultToRecord(result.initial, record);
         exp.copyResultToRecord(result.exp, record);
         dev.copyResultToRecord(result.dev, record);
+        if (ellipse.isValid()) {
+            double u = 1.0 - result.fracDev;
+            double v = result.fracDev;
+            record.set(ellipse.getIxx(), u*result.exp.ellipse.getIxx() + v*result.dev.ellipse.getIxx());
+            record.set(ellipse.getIyy(), u*result.exp.ellipse.getIyy() + v*result.dev.ellipse.getIyy());
+            record.set(ellipse.getIxy(), u*result.exp.ellipse.getIxy() + v*result.dev.ellipse.getIxy());
+        }
         record.set(flux.meas, result.flux);
         record.set(flux.err, result.fluxSigma);
         record.set(fluxInner, result.fluxInner);
@@ -475,6 +485,7 @@ struct CModelKeys {
     afw::table::Key<Scalar> objective;
     afw::table::Key<int> initialFitArea;
     afw::table::Key<int> finalFitArea;
+    afw::table::Key<afw::table::Moments<Scalar> > ellipse;
     afw::table::Key<afw::table::Flag> flags[CModelResult::N_FLAGS];
 };
 
