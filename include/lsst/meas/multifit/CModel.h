@@ -35,6 +35,7 @@
 #include "lsst/meas/multifit/SoftenedLinearPrior.h"
 #include "lsst/meas/multifit/UnitTransformedLikelihood.h"
 #include "lsst/meas/multifit/optimizer.h"
+#include "lsst/meas/multifit/PixelFitRegion.h"
 
 namespace lsst { namespace meas { namespace multifit {
 
@@ -115,49 +116,6 @@ struct CModelStageControl {
 
 };
 
-struct CModelRegionControl {
-
-    CModelRegionControl() :
-        nGrowFootprint(5),
-        nInitialRadii(3),
-        maxArea(100000),
-        maxBadPixelFraction(0.1)
-    {
-        badMaskPlanes.push_back("EDGE");
-        badMaskPlanes.push_back("SAT");
-        badMaskPlanes.push_back("BAD");
-        badMaskPlanes.push_back("NO_DATA");
-    }
-
-    LSST_CONTROL_FIELD(
-        nGrowFootprint, int,
-        "Number of pixels to grow the original footprint by before the initial fit."
-    );
-
-    LSST_CONTROL_FIELD(
-        nInitialRadii, double,
-        "After the initial fit, extend the fit region to include all the pixels within "
-        "this many initial-fit radii."
-    );
-
-    LSST_CONTROL_FIELD(
-        maxArea, int,
-        "Abort if the fit region grows beyond this many pixels."
-    );
-
-    LSST_CONTROL_FIELD(
-        badMaskPlanes, std::vector<std::string>,
-        "Mask planes that indicate pixels that should be ignored in the fit."
-    );
-
-    LSST_CONTROL_FIELD(
-        maxBadPixelFraction, double,
-        "Maximum fraction of pixels that may be ignored due to masks; "
-        "more than this and we don't even try."
-    );
-
-};
-
 
 struct CModelControl : public algorithms::AlgorithmControl {
 
@@ -188,7 +146,7 @@ struct CModelControl : public algorithms::AlgorithmControl {
     LSST_CONTROL_FIELD(psfName, std::string, "Root name of the FitPsfAlgorithm fields.");
 
     LSST_NESTED_CONTROL_FIELD(
-        region, lsst.meas.multifit.multifitLib, CModelRegionControl,
+        region, lsst.meas.multifit.multifitLib, PixelFitRegionControl,
         "Configuration parameters related to the determination of the pixels to include in the fit."
     );
 
@@ -270,14 +228,17 @@ struct CModelResult {
 
     enum FlagBit {
         FAILED=0,
-        MAX_AREA,
-        MAX_BAD_PIXEL_FRACTION,
+        REGION_MAX_AREA,
+        REGION_MAX_BAD_PIXEL_FRACTION,
+        REGION_USED_FOOTPRINT_AREA,
+        REGION_USED_PSF_AREA,
+        REGION_USED_INITIAL_ELLIPSE_MIN,
+        REGION_USED_INITIAL_ELLIPSE_MAX,
         NO_SHAPE,
         SMALL_SHAPE,
         NO_PSF,
         NO_WCS,
         NO_CALIB,
-        INCOMPLETE_FIT_REGION,
         BAD_CENTROID,
         BAD_REFERENCE,
         N_FLAGS
@@ -298,8 +259,8 @@ struct CModelResult {
     CModelStageResult exp;
     CModelStageResult dev;
 
-    PTR(afw::detection::Footprint) initialFitRegion;
-    PTR(afw::detection::Footprint) finalFitRegion;
+    afw::geom::ellipses::Quadrupole initialFitRegion;
+    afw::geom::ellipses::Quadrupole finalFitRegion;
 
     LocalUnitTransform fitSysToMeasSys;
 
@@ -327,49 +288,18 @@ public:
         return static_cast<Control const &>(algorithms::Algorithm::getControl());
     }
 
-    /**
-     *  @brief Determine the initial fit region for a CModelAlgorithm fit
-     *
-     *  This routine grows the given footprint by nGrowFootprint, then clips on the bounding box
-     *  of the given mask and removes pixels indicated as bad by badMaskPlanes.
-     *
-     *  Failures are indicated by setting flag bits in the given Result object.
-     */
-    PTR(afw::detection::Footprint) determineInitialFitRegion(
-        afw::image::Mask<> const & mask,
-        afw::detection::Footprint const & footprint,
-        afw::geom::Point2D const & center,
-        Result & result
-    ) const;
-
-    /**
-     *  @brief Determine the final fit region for a CModelAlgorithm fit.
-     *
-     *  This routine grows the given footprint by nGrowFootprint, then extends it to include
-     *  the given ellipse scaled by nInitialRadii.  It then clips on the bounding box of the
-     *  given mask and removes pixels indicated as bad by badMaskPlanes.
-     *
-     *  Failures are indicated by setting flag bits in the given Result object.
-     */
-    PTR(afw::detection::Footprint) determineFinalFitRegion(
-        afw::image::Mask<> const & mask,
-        afw::detection::Footprint const & footprint,
-        afw::geom::ellipses::Ellipse const & ellipse,
-        Result & result
-    ) const;
-
     Result apply(
         afw::image::Exposure<Pixel> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         afw::geom::ellipses::Quadrupole const & moments,
-        Scalar approxFlux=-1
+        Scalar approxFlux=-1,
+        Scalar kronRadius=-1,
+        int footprintArea=-1
     ) const;
 
     Result applyForced(
         afw::image::Exposure<Pixel> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         Result const & reference,
@@ -387,22 +317,24 @@ private:
     void _applyImpl(
         Result & result,
         afw::image::Exposure<Pixel> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         afw::geom::ellipses::Quadrupole const & moments,
-        Scalar approxFlux
+        Scalar approxFlux,
+        Scalar kronRadius,
+        int footprintArea
     ) const;
 
     // this method just throws an exception; it's present to resolve dispatches from _apply()
     void _applyImpl(
         Result & result,
         afw::image::Exposure<double> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         afw::geom::ellipses::Quadrupole const & moments,
-        Scalar approxFlux=-1
+        Scalar approxFlux,
+        Scalar kronRadius,
+        int footprintArea
     ) const {
         throw LSST_EXCEPT(
             pex::exceptions::LogicErrorException,
@@ -415,7 +347,6 @@ private:
     void _applyForcedImpl(
         Result & result,
         afw::image::Exposure<Pixel> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         Result const & reference,
@@ -426,7 +357,6 @@ private:
     void _applyForcedImpl(
         Result & result,
         afw::image::Exposure<double> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         Result const & reference,
