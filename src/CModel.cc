@@ -1042,7 +1042,6 @@ CModelAlgorithm::CModelAlgorithm(Control const & ctrl) :
 PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
     afw::image::Mask<> const & mask,
     afw::detection::Footprint const & footprint,
-    afw::geom::Box2I const & psfBBox,
     afw::geom::Point2D const & center,
     Result & result
 ) const {
@@ -1072,9 +1071,6 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
     }
     // From here on, steps can only shrink the footprint (or in pathological cases,
     // grow it by a tiny amount), so we don't have to check max area anymore.
-    if (getControl().region.includePsfBBox && !region->getBBox().contains(psfBBox)) {
-        region = _mergeFootprints(*region, afw::detection::Footprint(psfBBox), result, center);
-    }
     int originalArea = region->getArea();
     region->clipTo(mask.getBBox(afw::image::PARENT));
     if (region->getArea() == 0) {
@@ -1094,7 +1090,6 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineInitialFitRegion(
 PTR(afw::detection::Footprint) CModelAlgorithm::determineFinalFitRegion(
     afw::image::Mask<> const & mask,
     afw::detection::Footprint const & footprint,
-    afw::geom::Box2I const & psfBBox,
     afw::geom::ellipses::Ellipse const & ellipse,
     Result & result
 ) const {
@@ -1135,9 +1130,6 @@ PTR(afw::detection::Footprint) CModelAlgorithm::determineFinalFitRegion(
     }
     // From here on, steps can only shrink the footprint (or in pathological cases,
     // grow it by a tiny amount), so we don't have to check max area anymore.
-    if (getControl().region.includePsfBBox && !region->getBBox().contains(psfBBox)) {
-        region = _mergeFootprints(*region, afw::detection::Footprint(psfBBox), result, ellipse.getCenter());
-    }
     double originalArea = region->getArea();
     region->clipTo(mask.getBBox(afw::image::PARENT));
     region->intersectMask(mask, _impl->badPixelMask);
@@ -1172,13 +1164,10 @@ void CModelAlgorithm::_applyImpl(
     Scalar approxFlux
 ) const {
 
-    afw::geom::Box2I psfBBox = exposure.getPsf()->computeImage(center)->getBBox(afw::image::PARENT);
-
     // Grow the footprint, clip bad pixels and the exposure bbox
     result.initialFitRegion = determineInitialFitRegion(
         *exposure.getMaskedImage().getMask(),
         footprint,
-        psfBBox,
         center,
         result
     );
@@ -1222,7 +1211,6 @@ void CModelAlgorithm::_applyImpl(
     result.finalFitRegion = determineFinalFitRegion(
         *exposure.getMaskedImage().getMask(),
         footprint,
-        psfBBox,
         _impl->initial.ellipses.front(),
         result
     );
@@ -1283,7 +1271,6 @@ void CModelAlgorithm::_applyForcedImpl(
     CModelResult const & reference,
     Scalar approxFlux
 ) const {
-    afw::geom::Box2I psfBBox = exposure.getPsf()->computeImage(center)->getBBox(afw::image::PARENT);
 
     if (reference.getFlag(CModelResult::FAILED)) {
         result.setFlag(CModelResult::BAD_REFERENCE, true);
@@ -1330,7 +1317,6 @@ void CModelAlgorithm::_applyForcedImpl(
     result.finalFitRegion = determineFinalFitRegion(
         *exposure.getMaskedImage().getMask(),
         footprint,
-        psfBBox,
         _impl->initial.ellipses.front(),
         result
     );
