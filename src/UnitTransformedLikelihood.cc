@@ -89,15 +89,19 @@ void setupArrays(
     ndarray::Array<Pixel,1,1> const & data,
     ndarray::Array<Pixel,1,1> const & variance,
     ndarray::Array<Pixel,1,1> const & weights,
+    ndarray::Array<Pixel,1,1> & unweightedData,
     bool usePixelWeights
 ) {
     afw::detection::flattenArray(footprint, image.getImage()->getArray(), data, image.getXY0());
     afw::detection::flattenArray(footprint, image.getVariance()->getArray(), variance, image.getXY0());
     if (usePixelWeights) {
+        unweightedData = ndarray::copy(data);
         // Convert from variance to weights (1/sigma); this is actually the usual inverse-variance
         // weighting, because we implicitly square it later.
         weights.asEigen<Eigen::ArrayXpr>() = variance.asEigen<Eigen::ArrayXpr>().sqrt().inverse();
         data.asEigen<Eigen::ArrayXpr>() *= weights.asEigen<Eigen::ArrayXpr>();
+    } else {
+        unweightedData = data;
     }
 }
 
@@ -172,6 +176,7 @@ UnitTransformedLikelihood::UnitTransformedLikelihood(
             _data[ndarray::view(dataOffset, dataEnd)],
             _variance[ndarray::view(dataOffset, dataEnd)],
             (ctrl.usePixelWeights) ? _weights[ndarray::view(dataOffset, dataEnd)] : _weights,
+            _unweightedData,
             ctrl.usePixelWeights
         );
     }
@@ -200,7 +205,8 @@ UnitTransformedLikelihood::UnitTransformedLikelihood(
             makeMatrixBuilders(model->getBasisVector(), psf, footprint, ctrl.useApproximateExp)
         )
     );
-    setupArrays(exposure.getMaskedImage(), footprint, _data, _variance, _weights, ctrl.usePixelWeights);
+    setupArrays(exposure.getMaskedImage(), footprint, _data, _variance, _weights, _unweightedData,
+                ctrl.usePixelWeights);
 }
 
 UnitTransformedLikelihood::~UnitTransformedLikelihood() {}
