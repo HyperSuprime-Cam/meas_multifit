@@ -795,10 +795,6 @@ public:
         prefixes[0] = "exp";
         prefixes[1] = "dev";
         model = boost::make_shared<MultiModel>(components, prefixes);
-        // create set of diagnostic IDs for fast lookup
-        if (ctrl.diagnostics.enabled) {
-            diagnosticIds.insert(ctrl.diagnostics.ids.begin(), ctrl.diagnostics.ids.end());
-        }
     }
 
     CModelStageImpl initial;
@@ -809,7 +805,6 @@ public:
     PTR(CModelKeys) refKeys;
     PTR(extensions::multiShapelet::FitPsfControl const) fitPsfCtrl;
     afw::image::MaskPixel badPixelMask;
-    std::set<boost::int64_t> diagnosticIds;
 
     CModelResult makeResult() const {
         CModelResult result;
@@ -969,41 +964,6 @@ public:
                 "Error unexplained by flags detected for source %s; please report this as a bug in CModel"
             ) % record.getId()).str()
         );
-    }
-
-    template <typename T>
-    void writeDiagnostics(
-        CModelControl const & ctrl,
-        boost::int64_t id,
-        CModelResult const & result,
-        afw::image::Exposure<T> const & exposure
-    ) const {
-        if (!result.initialFitRegion) {
-            return; // cannot write diagnostics if we didn't at least get this far.
-        }
-        std::string path = (boost::format("%s/%d.fits") % ctrl.diagnostics.root % id).str();
-        afw::fits::Fits fits(path, "w", afw::fits::Fits::AUTO_CLOSE | afw::fits::Fits::AUTO_CHECK);
-        afw::geom::Box2I bbox = result.initialFitRegion->getBBox();
-        if (result.finalFitRegion) {
-            bbox.include(result.finalFitRegion->getBBox());
-        }
-        afw::image::Image<T> subImage(*exposure.getMaskedImage().getImage(), bbox, afw::image::PARENT);
-        subImage.writeFits(fits);
-        if (ctrl.initial.doRecordHistory && result.initial.history.getTable()) {
-            result.initial.history.writeFits(fits);
-        } else {
-            fits.createEmpty();
-        }
-        if (ctrl.exp.doRecordHistory && result.exp.history.getTable()) {
-            result.exp.history.writeFits(fits);
-        } else {
-            fits.createEmpty();
-        }
-        if (ctrl.dev.doRecordHistory && result.dev.history.getTable()) {
-            result.dev.history.writeFits(fits);
-        } else {
-            fits.createEmpty();
-        }
     }
 
 };
@@ -1457,16 +1417,10 @@ void CModelAlgorithm::_apply(
         _applyImpl(result, exposure, *source.getFootprint(), psf, center, moments, approxFlux);
     } catch (...) {
         _impl->keys->copyResultToRecord(result, source);
-        if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
-            _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
-        }
         _impl->checkFlagDetails(source);
         throw;
     }
     _impl->keys->copyResultToRecord(result, source);
-    if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
-        _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
-    }
     _impl->checkFlagDetails(source);
 }
 
@@ -1502,16 +1456,10 @@ void CModelAlgorithm::_applyForced(
         _applyForcedImpl(result, exposure, *source.getFootprint(), psf, center, refResult, approxFlux);
     } catch (...) {
         _impl->keys->copyResultToRecord(result, source);
-        if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
-            _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
-        }
         _impl->checkFlagDetails(source);
         throw;
     }
     _impl->keys->copyResultToRecord(result, source);
-    if (_impl->diagnosticIds.find(source.getId()) != _impl->diagnosticIds.end()) {
-        _impl->writeDiagnostics(getControl(), source.getId(), result, exposure);
-    }
     _impl->checkFlagDetails(source);
 }
 

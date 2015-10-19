@@ -61,7 +61,6 @@ CModelStageConfig = lsst.pex.config.makeConfigClass(CModelStageControl)
 
 CModelRegionConfig = lsst.pex.config.makeConfigClass(CModelRegionControl)
 
-CModelDiagnosticsConfig = lsst.pex.config.makeConfigClass(CModelDiagnosticsControl)
 
 lsst.meas.algorithms.AlgorithmRegistry.register("cmodel", CModelControl)
 

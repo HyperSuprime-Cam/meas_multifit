@@ -158,26 +158,6 @@ struct CModelRegionControl {
 
 };
 
-struct CModelDiagnosticsControl {
-
-    CModelDiagnosticsControl() : enabled(false), root(""), ids() {}
-
-    LSST_CONTROL_FIELD(
-        enabled,  bool,
-        "Whether to write diagnostic outputs for post-run debugging"
-    );
-
-    LSST_CONTROL_FIELD(
-        root, std::string,
-        "Root output path for diagnostic outputs"
-    );
-
-    LSST_CONTROL_FIELD(
-        ids, std::vector<boost::int64_t>,
-        "Source IDs for which diagnostic outpust should be produced"
-    );
-
-};
 
 struct CModelControl : public algorithms::AlgorithmControl {
 
@@ -210,11 +190,6 @@ struct CModelControl : public algorithms::AlgorithmControl {
     LSST_NESTED_CONTROL_FIELD(
         region, lsst.meas.multifit.multifitLib, CModelRegionControl,
         "Configuration parameters related to the determination of the pixels to include in the fit."
-    );
-
-    LSST_NESTED_CONTROL_FIELD(
-        diagnostics, lsst.meas.multifit.multifitLib, CModelDiagnosticsControl,
-        "Configuration parameters related to diagnostic outputs for post-run debugging."
     );
 
     LSST_NESTED_CONTROL_FIELD(
