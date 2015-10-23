@@ -33,6 +33,7 @@
 #include "lsst/meas/multifit/Model.h"
 #include "lsst/meas/multifit/MixturePrior.h"
 #include "lsst/meas/multifit/SoftenedLinearPrior.h"
+#include "lsst/meas/multifit/SemiEmpiricalPrior.h"
 #include "lsst/meas/multifit/UnitTransformedLikelihood.h"
 #include "lsst/meas/multifit/optimizer.h"
 #include "lsst/meas/multifit/PixelFitRegion.h"
@@ -45,7 +46,7 @@ struct CModelStageControl {
 
     CModelStageControl() :
         profileName("lux"),
-        priorSource("CONFIG"),
+        priorSource("LINEAR"),
         priorName(),
         nComponents(8),
         maxRadius(0),
@@ -69,8 +70,8 @@ struct CModelStageControl {
 
     LSST_CONTROL_FIELD(
         priorSource, std::string,
-        "One of 'FILE', 'CONFIG', or 'NONE', indicating whether the prior should be loaded from disk "
-        "created from the nested prior config/control object, or None"
+        "One of 'FILE', 'LINEAR', 'EMPIRICAL', or 'NONE', indicating whether the prior should be loaded "
+        "from disk, created from one of the nested prior config/control objects, or None"
     );
 
     LSST_CONTROL_FIELD(
@@ -80,8 +81,13 @@ struct CModelStageControl {
     );
 
     LSST_NESTED_CONTROL_FIELD(
-        priorConfig, lsst.meas.multifit.multifitLib, SoftenedLinearPriorControl,
-        "Configuration for the prior, used if priorSource='CONFIG'."
+        linearPriorConfig, lsst.meas.multifit.multifitLib, SoftenedLinearPriorControl,
+        "Configuration for a linear prior, used if priorSource='LINEAR'."
+    );
+
+    LSST_NESTED_CONTROL_FIELD(
+        empiricalPriorConfig, lsst.meas.multifit.multifitLib, SemiEmpiricalPriorControl,
+        "Configuration for an empirical prior, used if priorSource='EMPIRICAL'."
     );
 
     LSST_CONTROL_FIELD(nComponents, int, "Number of Gaussian used to approximate the profile");
