@@ -33,8 +33,10 @@
 #include "lsst/meas/multifit/Model.h"
 #include "lsst/meas/multifit/MixturePrior.h"
 #include "lsst/meas/multifit/SoftenedLinearPrior.h"
+#include "lsst/meas/multifit/SemiEmpiricalPrior.h"
 #include "lsst/meas/multifit/UnitTransformedLikelihood.h"
 #include "lsst/meas/multifit/optimizer.h"
+#include "lsst/meas/multifit/PixelFitRegion.h"
 
 namespace lsst { namespace meas { namespace multifit {
 
@@ -44,10 +46,11 @@ struct CModelStageControl {
 
     CModelStageControl() :
         profileName("lux"),
-        priorSource("CONFIG"),
+        priorSource("LINEAR"),
         priorName(),
         nComponents(8),
         maxRadius(0),
+        usePixelWeights(false),
         doRecordHistory(true),
         doRecordTime(true)
     {}
@@ -67,8 +70,8 @@ struct CModelStageControl {
 
     LSST_CONTROL_FIELD(
         priorSource, std::string,
-        "One of 'FILE', 'CONFIG', or 'NONE', indicating whether the prior should be loaded from disk "
-        "created from the nested prior config/control object, or None"
+        "One of 'FILE', 'LINEAR', 'EMPIRICAL', or 'NONE', indicating whether the prior should be loaded "
+        "from disk, created from one of the nested prior config/control objects, or None"
     );
 
     LSST_CONTROL_FIELD(
@@ -78,8 +81,13 @@ struct CModelStageControl {
     );
 
     LSST_NESTED_CONTROL_FIELD(
-        priorConfig, lsst.meas.multifit.multifitLib, SoftenedLinearPriorControl,
-        "Configuration for the prior, used if priorSource='CONFIG'."
+        linearPriorConfig, lsst.meas.multifit.multifitLib, SoftenedLinearPriorControl,
+        "Configuration for a linear prior, used if priorSource='LINEAR'."
+    );
+
+    LSST_NESTED_CONTROL_FIELD(
+        empiricalPriorConfig, lsst.meas.multifit.multifitLib, SemiEmpiricalPriorControl,
+        "Configuration for an empirical prior, used if priorSource='EMPIRICAL'."
     );
 
     LSST_CONTROL_FIELD(nComponents, int, "Number of Gaussian used to approximate the profile");
@@ -88,6 +96,13 @@ struct CModelStageControl {
         maxRadius,
         int,
         "Maximum radius used in approximating profile with Gaussians (0=default for this profile)"
+    );
+
+    LSST_CONTROL_FIELD(
+        usePixelWeights,
+        bool,
+        "Use per-pixel variances as weights in the nonlinear fit (the final linear fit for"
+        " flux never uses per-pixel variances)"
     );
 
     LSST_NESTED_CONTROL_FIELD(
@@ -102,80 +117,11 @@ struct CModelStageControl {
 
     LSST_CONTROL_FIELD(
         doRecordTime, bool,
-        "Whether to record the time spent in this stage stage"
+        "Whether to record the time spent in this stage"
     );
 
 };
 
-struct CModelRegionControl {
-
-    CModelRegionControl() :
-        includePsfBBox(false),
-        nGrowFootprint(5),
-        nInitialRadii(3),
-        maxArea(100000),
-        maxBadPixelFraction(0.1)
-    {
-        badMaskPlanes.push_back("EDGE");
-        badMaskPlanes.push_back("SAT");
-        badMaskPlanes.push_back("BAD");
-        badMaskPlanes.push_back("NO_DATA");
-    }
-
-    LSST_CONTROL_FIELD(
-        includePsfBBox, bool,
-        "If True, always make the fit region at least the size of the PSF model realization's bounding box"
-    );
-
-    LSST_CONTROL_FIELD(
-        nGrowFootprint, int,
-        "Number of pixels to grow the original footprint by before the initial fit."
-    );
-
-    LSST_CONTROL_FIELD(
-        nInitialRadii, double,
-        "After the initial fit, extend the fit region to include all the pixels within "
-        "this many initial-fit radii."
-    );
-
-    LSST_CONTROL_FIELD(
-        maxArea, int,
-        "Abort if the fit region grows beyond this many pixels."
-    );
-
-    LSST_CONTROL_FIELD(
-        badMaskPlanes, std::vector<std::string>,
-        "Mask planes that indicate pixels that should be ignored in the fit."
-    );
-
-    LSST_CONTROL_FIELD(
-        maxBadPixelFraction, double,
-        "Maximum fraction of pixels that may be ignored due to masks; "
-        "more than this and we don't even try."
-    );
-
-};
-
-struct CModelDiagnosticsControl {
-
-    CModelDiagnosticsControl() : enabled(false), root(""), ids() {}
-
-    LSST_CONTROL_FIELD(
-        enabled,  bool,
-        "Whether to write diagnostic outputs for post-run debugging"
-    );
-
-    LSST_CONTROL_FIELD(
-        root, std::string,
-        "Root output path for diagnostic outputs"
-    );
-
-    LSST_CONTROL_FIELD(
-        ids, std::vector<boost::int64_t>,
-        "Source IDs for which diagnostic outpust should be produced"
-    );
-
-};
 
 struct CModelControl : public algorithms::AlgorithmControl {
 
@@ -187,6 +133,7 @@ struct CModelControl : public algorithms::AlgorithmControl {
         initial.nComponents = 3; // use very rough model in initial fit
         initial.optimizer.gradientThreshold = 1E-2; // with coarse convergence criteria
         initial.optimizer.minTrustRadiusThreshold = 1E-2;
+        initial.usePixelWeights = true;
         dev.profileName = "luv";
         exp.nComponents = 6;
         exp.optimizer.maxOuterIterations = 250;
@@ -206,13 +153,8 @@ struct CModelControl : public algorithms::AlgorithmControl {
     LSST_CONTROL_FIELD(psfName, std::string, "Root name of the FitPsfAlgorithm fields.");
 
     LSST_NESTED_CONTROL_FIELD(
-        region, lsst.meas.multifit.multifitLib, CModelRegionControl,
+        region, lsst.meas.multifit.multifitLib, PixelFitRegionControl,
         "Configuration parameters related to the determination of the pixels to include in the fit."
-    );
-
-    LSST_NESTED_CONTROL_FIELD(
-        diagnostics, lsst.meas.multifit.multifitLib, CModelDiagnosticsControl,
-        "Configuration parameters related to diagnostic outputs for post-run debugging."
     );
 
     LSST_NESTED_CONTROL_FIELD(
@@ -293,14 +235,17 @@ struct CModelResult {
 
     enum FlagBit {
         FAILED=0,
-        MAX_AREA,
-        MAX_BAD_PIXEL_FRACTION,
+        REGION_MAX_AREA,
+        REGION_MAX_BAD_PIXEL_FRACTION,
+        REGION_USED_FOOTPRINT_AREA,
+        REGION_USED_PSF_AREA,
+        REGION_USED_INITIAL_ELLIPSE_MIN,
+        REGION_USED_INITIAL_ELLIPSE_MAX,
         NO_SHAPE,
         SMALL_SHAPE,
         NO_PSF,
         NO_WCS,
         NO_CALIB,
-        INCOMPLETE_FIT_REGION,
         BAD_CENTROID,
         BAD_REFERENCE,
         N_FLAGS
@@ -321,8 +266,8 @@ struct CModelResult {
     CModelStageResult exp;
     CModelStageResult dev;
 
-    PTR(afw::detection::Footprint) initialFitRegion;
-    PTR(afw::detection::Footprint) finalFitRegion;
+    afw::geom::ellipses::Quadrupole initialFitRegion;
+    afw::geom::ellipses::Quadrupole finalFitRegion;
 
     LocalUnitTransform fitSysToMeasSys;
 
@@ -350,51 +295,18 @@ public:
         return static_cast<Control const &>(algorithms::Algorithm::getControl());
     }
 
-    /**
-     *  @brief Determine the initial fit region for a CModelAlgorithm fit
-     *
-     *  This routine grows the given footprint by nGrowFootprint, then clips on the bounding box
-     *  of the given mask and removes pixels indicated as bad by badMaskPlanes.
-     *
-     *  Failures are indicated by setting flag bits in the given Result object.
-     */
-    PTR(afw::detection::Footprint) determineInitialFitRegion(
-        afw::image::Mask<> const & mask,
-        afw::detection::Footprint const & footprint,
-        afw::geom::Box2I const & psfBBox,
-        afw::geom::Point2D const & center,
-        Result & result
-    ) const;
-
-    /**
-     *  @brief Determine the final fit region for a CModelAlgorithm fit.
-     *
-     *  This routine grows the given footprint by nGrowFootprint, then extends it to include
-     *  the given ellipse scaled by nInitialRadii.  It then clips on the bounding box of the
-     *  given mask and removes pixels indicated as bad by badMaskPlanes.
-     *
-     *  Failures are indicated by setting flag bits in the given Result object.
-     */
-    PTR(afw::detection::Footprint) determineFinalFitRegion(
-        afw::image::Mask<> const & mask,
-        afw::detection::Footprint const & footprint,
-        afw::geom::Box2I const & psfBBox,
-        afw::geom::ellipses::Ellipse const & ellipse,
-        Result & result
-    ) const;
-
     Result apply(
         afw::image::Exposure<Pixel> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         afw::geom::ellipses::Quadrupole const & moments,
-        Scalar approxFlux=-1
+        Scalar approxFlux=-1,
+        Scalar kronRadius=-1,
+        int footprintArea=-1
     ) const;
 
     Result applyForced(
         afw::image::Exposure<Pixel> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         Result const & reference,
@@ -412,22 +324,24 @@ private:
     void _applyImpl(
         Result & result,
         afw::image::Exposure<Pixel> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         afw::geom::ellipses::Quadrupole const & moments,
-        Scalar approxFlux
+        Scalar approxFlux,
+        Scalar kronRadius,
+        int footprintArea
     ) const;
 
     // this method just throws an exception; it's present to resolve dispatches from _apply()
     void _applyImpl(
         Result & result,
         afw::image::Exposure<double> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         afw::geom::ellipses::Quadrupole const & moments,
-        Scalar approxFlux=-1
+        Scalar approxFlux,
+        Scalar kronRadius,
+        int footprintArea
     ) const {
         throw LSST_EXCEPT(
             pex::exceptions::LogicErrorException,
@@ -440,7 +354,6 @@ private:
     void _applyForcedImpl(
         Result & result,
         afw::image::Exposure<Pixel> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         Result const & reference,
@@ -451,7 +364,6 @@ private:
     void _applyForcedImpl(
         Result & result,
         afw::image::Exposure<double> const & exposure,
-        afw::detection::Footprint const & footprint,
         shapelet::MultiShapeletFunction const & psf,
         afw::geom::Point2D const & center,
         Result const & reference,

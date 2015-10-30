@@ -30,6 +30,7 @@
 // but SWIG wants to do everything by pointer.  The result is confusion over lifetimes, and dangling pointers.
 %ignore lsst::meas::multifit::CModelStageResult::ellipse;
 
+%include "lsst/meas/multifit/PixelFitRegion.h"
 %include "lsst/meas/multifit/CModel.h"
 
 %extend lsst::meas::multifit::CModelStageResult {
@@ -59,9 +60,7 @@ import lsst.meas.algorithms
 
 CModelStageConfig = lsst.pex.config.makeConfigClass(CModelStageControl)
 
-CModelRegionConfig = lsst.pex.config.makeConfigClass(CModelRegionControl)
-
-CModelDiagnosticsConfig = lsst.pex.config.makeConfigClass(CModelDiagnosticsControl)
+PixelFitRegionConfig = lsst.pex.config.makeConfigClass(PixelFitRegionControl)
 
 lsst.meas.algorithms.AlgorithmRegistry.register("cmodel", CModelControl)
 
