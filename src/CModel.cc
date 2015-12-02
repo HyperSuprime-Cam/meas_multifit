@@ -361,6 +361,10 @@ struct CModelKeys {
                 "ellipse used to set the pixel region for the final fit (before applying bad pixel mask)"
             );
         } else {
+            fixedFlux = addFluxFields(
+                schema, prefix + ".fixed.flux",
+                "flux from a cmodel fit holding fracDev fixed at its reference value"
+            );
             flags[CModelResult::BAD_REFERENCE] = schema.addField<afw::table::Flag>(
                 prefix + ".flags.badReference",
                 "The original fit in the reference catalog failed."
@@ -394,6 +398,7 @@ struct CModelKeys {
         exp(expModel, schema, prefix + ".exp"),
         dev(devModel, schema, prefix + ".dev"),
         center(schema[prefix + ".center"]),
+        fracDev(schema[prefix + ".fracDev"]),
         initialFitRegion(schema[prefix + ".region.initial.ellipse"]),
         finalFitRegion(schema[prefix + ".region.final.ellipse"])
     {
@@ -427,6 +432,11 @@ struct CModelKeys {
                 record.set(flags[b], result.flags[b]);
             }
         }
+        if (fixedFlux.meas.isValid()) {
+            record.set(fixedFlux.meas, result.fixedFlux);
+            record.set(fixedFlux.err, result.fixedFluxSigma);
+            record.set(fixedFlux.flag, result.flags[CModelResult::FAILED]);
+        }
     }
 
     CModelResult copyRecordToResult(afw::table::BaseRecord const & record) const {
@@ -437,6 +447,7 @@ struct CModelKeys {
         result.dev = dev.copyRecordToResult(record);
         result.initialFitRegion = record.get(initialFitRegion);
         result.finalFitRegion = record.get(finalFitRegion);
+        result.fracDev = record.get(fracDev);
         result.setFlag(CModelResult::FAILED, record.get(flags[CModelResult::FAILED]));
         return result;
     }
@@ -473,6 +484,7 @@ struct CModelKeys {
     CModelStageKeys dev;
     afw::table::Key<afw::table::Point<Scalar> > center;
     afw::table::KeyTuple<afw::table::Flux> flux;
+    afw::table::KeyTuple<afw::table::Flux> fixedFlux;
     afw::table::Key<Scalar> fluxInner;
     afw::table::Key<Scalar> fracDev;
     afw::table::Key<Scalar> objective;
@@ -798,7 +810,8 @@ public:
     void fitLinear(
         CModelControl const & ctrl, CModelResult & result,
         CModelStageData const & expData, CModelStageData const & devData,
-        afw::image::Exposure<Pixel> const & exposure, afw::detection::Footprint const & footprint
+        afw::image::Exposure<Pixel> const & exposure, afw::detection::Footprint const & footprint,
+        Scalar refFracDev=-1
     ) const {
         // concatenate exp and dev parameter arrays to make parameter arrays for combined model
         ndarray::Array<Scalar,1,1> nonlinear = ndarray::allocate(model->getNonlinearDim());
@@ -840,9 +853,17 @@ public:
         WeightSums sums(model, likelihood.getUnweightedData(), likelihood.getVariance());
         result.fluxInner = sums.fluxInner;
         result.fluxSigma = std::sqrt(sums.fluxVar)*result.flux/result.fluxInner;
-        result.setFlag(CModelResult::FAILED, false);
         result.fracDev = amplitudes[1] / amplitudes.sum();
         result.objective = tg.evaluateLog()(amplitudes);
+        result.setFlag(CModelResult::FAILED, false);
+        if (refFracDev >= 0.0) {
+            model.asEigen() = modelMatrix.asEigen().col(0)*(1.0 - refFracDev) +
+                modelMatrix.asEigen().col(1)*refFracDev;
+            WeightSums fixedSums(model, likelihood.getUnweightedData(), likelihood.getVariance());
+            result.fixedFlux = expData.fitSysToMeasSys.flux * fixedSums.amplitude;
+            result.fixedFluxInner = fixedSums.fluxInner;
+            result.fixedFluxSigma = std::sqrt(fixedSums.fluxVar)*result.fixedFlux/result.fixedFluxInner;
+        }
     }
 
     void guessParametersFromMoments(
@@ -1193,7 +1214,8 @@ void CModelAlgorithm::_applyForcedImpl(
 
     // Do the linear combination fit
     try {
-        _impl->fitLinear(getControl(), result, expData, devData, exposure, *region.footprint);
+        _impl->fitLinear(getControl(), result, expData, devData, exposure, *region.footprint,
+                         reference.fracDev);
     } catch (...) {
         result.setFlag(CModelResult::FAILED, true);
         throw;

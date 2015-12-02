@@ -258,6 +258,9 @@ struct CModelResult {
     Scalar fluxInner;
     Scalar fracDev;
     Scalar objective;
+    Scalar fixedFlux;
+    Scalar fixedFluxSigma;
+    Scalar fixedFluxInner;
 
     bool getFlag(FlagBit b) const { return flags[b]; }
     void setFlag(FlagBit b, bool value) { flags[b] = value; }
