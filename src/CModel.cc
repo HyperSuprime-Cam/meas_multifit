@@ -560,7 +560,7 @@ struct WeightSums {
         ndarray::Array<Pixel const,2,-1> const & modelMatrix,
         ndarray::Array<Pixel const,1,1> const & data,
         ndarray::Array<Pixel const,1,1> const & variance
-    ) : fluxInner(0.0), fluxVar(0.0), norm(0.0)
+    ) : amplitude(0.0), fluxInner(0.0), fluxVar(0.0), norm(0.0)
     {
         assert(modelMatrix.getSize<1>() == 1);
         run(modelMatrix.transpose()[0].asEigen<Eigen::ArrayXpr>(),
@@ -572,7 +572,7 @@ struct WeightSums {
         ndarray::Array<Pixel const,1,1> const & model,
         ndarray::Array<Pixel const,1,1> const & data,
         ndarray::Array<Pixel const,1,1> const & variance
-    ) : fluxInner(0.0), fluxVar(0.0), norm(0.0)
+    ) : amplitude(0.0), fluxInner(0.0), fluxVar(0.0), norm(0.0)
     {
         run(model.asEigen<Eigen::ArrayXpr>(),
             data.asEigen<Eigen::ArrayXpr>(),
@@ -589,10 +589,12 @@ struct WeightSums {
         double ww = model.square().sum();
         double wwv = (model.square()*variance).sum();
         norm = w/ww;
+        amplitude = wd/ww;
         fluxInner = wd*norm;
         fluxVar = wwv*norm*norm;
     }
 
+    double amplitude;
     double fluxInner;
     double fluxVar;
     double norm;
@@ -742,18 +744,15 @@ public:
             exposure, footprint, data.psf, UnitTransformedLikelihoodControl(ctrl.usePixelWeights)
         );
         ndarray::Array<Pixel,2,-1> modelMatrix = makeModelMatrix(*result.likelihood, data.nonlinear);
-        afw::math::LeastSquares lstsq = afw::math::LeastSquares::fromDesignMatrix(
-            modelMatrix,
-            result.likelihood->getUnweightedData()
-        );
-        data.amplitudes.deep() = lstsq.getSolution();
+
+        WeightSums sums(modelMatrix, result.likelihood->getUnweightedData(), result.likelihood->getVariance());
+
+        data.amplitudes[0] = sums.amplitude;
         result.objective
             = 0.5*(
                 result.likelihood->getUnweightedData().asEigen().cast<Scalar>()
-                - modelMatrix.asEigen().cast<Scalar>() * lstsq.getSolution().asEigen()
+                - modelMatrix.asEigen().row(0).cast<Scalar>() * static_cast<float>(sums.amplitude)
             ).squaredNorm();
-
-        WeightSums sums(modelMatrix, result.likelihood->getUnweightedData(), result.likelihood->getVariance());
 
         fillResult(result, data, sums);
         result.setFlag(CModelStageResult::FAILED, false);
