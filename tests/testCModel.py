@@ -96,6 +96,9 @@ class CModelTestCase(lsst.utils.tests.TestCase):
         """
         ctrl = lsst.meas.multifit.CModelControl()
         ctrl.initial.usePixelWeights = False
+        # Zero variance not actually allowed; yields infinite weight relative to prior, and numerics
+        # break down.
+        self.exposure.getMaskedImage().getVariance().getArray()[:,:] = 1E-15
         algorithm = lsst.meas.multifit.CModelAlgorithm(ctrl)
         result = algorithm.apply(
             self.exposure, makeMultiShapeletCircularGaussian(self.psfSigma),
@@ -103,19 +106,19 @@ class CModelTestCase(lsst.utils.tests.TestCase):
             )
         self.assertFalse(result.initial.getFlag(result.FAILED))
         self.assertClose(result.initial.flux, self.trueFlux, rtol=0.01)
-        self.assertClose(result.initial.fluxSigma, 0.0, rtol=0.0)
+        self.assertClose(result.initial.fluxSigma, 0.0, rtol=0.0, atol=1E-6)
         self.assertLess(result.initial.getEllipse().getDeterminantRadius(), 0.2)
         self.assertFalse(result.exp.getFlag(result.FAILED))
         self.assertClose(result.exp.flux, self.trueFlux, rtol=0.01)
-        self.assertClose(result.exp.fluxSigma, 0.0, rtol=0.0)
+        self.assertClose(result.exp.fluxSigma, 0.0, rtol=0.0, atol=1E-6)
         self.assertLess(result.exp.getEllipse().getDeterminantRadius(), 0.2)
         self.assertFalse(result.dev.getFlag(result.FAILED))
         self.assertClose(result.dev.flux, self.trueFlux, rtol=0.01)
-        self.assertClose(result.dev.fluxSigma, 0.0, rtol=0.0)
+        self.assertClose(result.dev.fluxSigma, 0.0, rtol=0.0, atol=1E-6)
         self.assertLess(result.dev.getEllipse().getDeterminantRadius(), 0.2)
         self.assertFalse(result.getFlag(result.FAILED))
         self.assertClose(result.flux, self.trueFlux, rtol=0.01)
-        self.assertClose(result.fluxSigma, 0.0, rtol=0.0, atol=0.0)
+        self.assertClose(result.fluxSigma, 0.0, rtol=0.0, atol=1E-6)
 
     def testVsPsfFlux(self):
         """Test that CModel produces results comparable a simplified reimplementation of PsfFlux.
